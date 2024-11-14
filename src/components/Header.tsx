@@ -1,38 +1,56 @@
 import React from 'react';
-import { BookOpen } from 'lucide-react';
 import { Button } from './ui/Button';
+import { useAuth } from '../contexts/AuthContext';
+import { User } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 export function Header() {
-  const navigateHome = () => {
-    window.location.href = '/';
-  };
+  const { user, signInWithGoogle, signOut } = useAuth();
+  const navigate = useNavigate();
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50">
+    <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-sm z-50 border-b border-gray-200">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          <button 
-            onClick={navigateHome}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-          >
-            <BookOpen className="h-6 w-6 text-blue-600" />
-            <span className="text-xl font-semibold text-gray-900">SpeedRead Pro</span>
-          </button>
-          
+          <Link to="/" className="flex items-center gap-2">
+            <span className="text-xl font-bold text-blue-600">SpeedReader</span>
+          </Link>
+
           <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              onClick={() => window.location.href = '/reader'}
-              className="px-6"
-            >
-              Try Reader
-            </Button>
-            <Button variant="ghost">
-              Login
-            </Button>
-            <Button variant="primary">
-              Sign Up Free
-            </Button>
+            {user ? (
+              <div className="flex items-center">
+                <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <User className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">
+                        {user.user_metadata.full_name?.split(' ')[0] || 'Reader'}
+                      </span>
+                      <span className="flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => signOut()}
+                      className="text-xs text-gray-500 hover:text-gray-700 text-left"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Button 
+                variant="primary"
+                onClick={() => signInWithGoogle()}
+                className="flex items-center gap-2"
+              >
+                Sign In/Up
+              </Button>
+            )}
           </div>
         </div>
       </div>

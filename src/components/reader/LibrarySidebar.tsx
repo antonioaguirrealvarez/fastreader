@@ -1,108 +1,104 @@
 import React from 'react';
-import { BookOpen, ChevronRight, Trash2 } from 'lucide-react';
+import { useLibraryStore } from '../../stores/libraryStore';
+import { FileText, BookOpen } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { CloseButton } from '../ui/CloseButton';
-import { BookCard } from './BookCard';
+import { useNavigate } from 'react-router-dom';
 
 interface LibrarySidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  darkMode?: boolean;
+  darkMode: boolean;
+  hideHeader: boolean;
 }
 
-const books = [
-  {
-    id: 1,
-    title: 'The Great Gatsby',
-    author: 'F. Scott Fitzgerald',
-    progress: 30,
-    totalPages: 180,
-    currentPage: 54,
-    timeLeft: '2h 15m',
-    cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=600&fit=crop',
-  },
-  {
-    id: 2,
-    title: '1984',
-    author: 'George Orwell',
-    progress: 75,
-    totalPages: 328,
-    currentPage: 246,
-    timeLeft: '3h 20m',
-    cover: 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=400&h=600&fit=crop',
-  },
-  {
-    id: 3,
-    title: 'To Kill a Mockingbird',
-    author: 'Harper Lee',
-    progress: 45,
-    totalPages: 281,
-    currentPage: 126,
-    timeLeft: '4h 10m',
-    cover: 'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&h=600&fit=crop',
-  },
-  {
-    id: 4,
-    title: 'Pride and Prejudice',
-    author: 'Jane Austen',
-    progress: 90,
-    totalPages: 432,
-    currentPage: 389,
-    timeLeft: '1h 30m',
-    cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=600&fit=crop',
-  }
-];
+export function LibrarySidebar({ isOpen, onClose, darkMode, hideHeader }: LibrarySidebarProps) {
+  const files = useLibraryStore(state => state.files);
+  const navigate = useNavigate();
 
-export function LibrarySidebar({ isOpen, onClose, darkMode = false }: LibrarySidebarProps) {
-  const navigate = (path: string) => {
-    window.location.href = path;
+  const handleStartReading = (file: { id: string; content: string; name: string }) => {
+    navigate('/reader', { 
+      state: { 
+        fileId: file.id,
+        fileName: file.name,
+        content: file.content 
+      } 
+    });
+    onClose();
   };
 
   return (
-    <div
-      className={`fixed inset-y-0 left-0 w-80 transform transition-transform duration-300 ease-in-out ${
+    <div 
+      className={`fixed left-0 ${hideHeader ? 'top-0' : 'top-16'} bottom-16 w-80 transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } z-40 ${darkMode ? 'bg-gray-900/95 text-gray-100' : 'bg-gray-50/95 text-gray-900'}`}
+      } ${darkMode ? 'bg-gray-900/95' : 'bg-gray-50/95'} backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col`}
     >
-      <div className="h-full flex flex-col">
-        <div className={`sticky top-0 z-10 ${darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-blue-600" />
-              <h2 className="text-lg font-semibold">Library</h2>
-            </div>
-            <CloseButton onClick={onClose} />
-          </div>
+      {/* Header */}
+      <div className={`sticky top-0 z-10 ${darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b p-4`}>
+        <div className="flex items-center justify-between">
+          <h2 className={`text-lg font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>Your Library</h2>
+          <button
+            onClick={onClose}
+            className={`p-2 rounded-lg hover:bg-gray-200 ${darkMode ? 'hover:bg-gray-800' : ''}`}
+          >
+            ×
+          </button>
         </div>
-        
-        <div className={`px-4 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              className="flex-1 flex items-center justify-between text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              onClick={() => navigate('/library')}
-            >
-              See Full Library
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              className="flex items-center justify-between text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              onClick={() => navigate('/add-book')}
-            >
-              Add Book
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      </div>
 
-        <div className="flex-1 overflow-y-auto pb-20">
-          <div className="p-4 space-y-4">
-            {books.map((book) => (
-              <BookCard key={book.id} book={book} darkMode={darkMode} />
-            ))}
+      {/* Book List */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {files.map((file) => (
+          <div 
+            key={file.id} 
+            className={`rounded-lg ${
+              darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
+            } transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5`}
+          >
+            <div className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="p-3 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600">
+                  <FileText className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className={`font-medium truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                    {file.name}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {Math.round(file.content.length / 200)} min read
+                    </span>
+                    <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
+                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {new Date(file.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-3 space-y-2">
+                <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="absolute left-0 top-0 h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300"
+                    style={{ width: `${file.progress || 0}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {file.progress ? `${file.progress}% complete` : 'Not started'}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleStartReading(file)}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 p-2"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   );

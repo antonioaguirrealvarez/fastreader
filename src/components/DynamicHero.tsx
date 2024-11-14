@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Button } from './ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 
 const motto = ['Read', 'Smarter,', 'Learn', 'Faster'];
 
 export function DynamicHero() {
+  const { user, signInWithGoogle } = useAuth();
   const [scrollPosition, setScrollPosition] = useState(0);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isAnimationComplete, setIsAnimationComplete] = useState(false);
@@ -52,6 +54,14 @@ export function DynamicHero() {
     transition: 'background 0.3s ease-out',
   };
 
+  const handleGetStarted = () => {
+    if (user) {
+      window.location.href = '/library';
+    } else {
+      signInWithGoogle();
+    }
+  };
+
   return (
     <section className="relative pt-32 pb-20 px-4 overflow-hidden">
       <div 
@@ -95,8 +105,13 @@ export function DynamicHero() {
             Transform your reading experience with AI-powered speed reading technology. 
             Improve comprehension and reading speed by up to 3x.
           </p>
-          <Button size="lg" className="mx-auto flex items-center gap-2">
-            Get Started Free <ArrowRight className="h-5 w-5" />
+          <Button 
+            variant="primary" 
+            size="lg" 
+            onClick={handleGetStarted}
+            className="mt-8"
+          >
+            Get Started Free
           </Button>
         </div>
       </div>

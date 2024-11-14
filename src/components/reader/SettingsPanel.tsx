@@ -15,12 +15,14 @@ interface SettingsPanelProps {
     fontSize: string;
     recordAnalytics: boolean;
     peripheralMode: boolean;
+    pauseOnPunctuation: boolean;
   };
   onClose: () => void;
   onUpdateSettings: (settings: SettingsPanelProps['settings']) => void;
+  hideHeader: boolean;
 }
 
-export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings, hideHeader }: SettingsPanelProps) {
   const updateSetting = <K extends keyof SettingsPanelProps['settings']>(
     key: K,
     value: SettingsPanelProps['settings'][K]
@@ -31,11 +33,18 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings }: S
     });
   };
 
+  const fontSizeOptions = [
+    { value: 'small', label: 'Small' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'large', label: 'Large' },
+    { value: 'extra-large', label: 'Extra Large' }
+  ];
+
   return (
     <div
-      className={`fixed inset-y-0 right-0 w-80 transform transition-transform duration-300 ease-in-out ${
+      className={`fixed right-0 ${hideHeader ? 'top-0' : 'top-16'} bottom-16 w-80 transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
-      } ${settings.darkMode ? 'bg-gray-900/95' : 'bg-gray-50/95'} backdrop-blur-sm shadow-2xl`}
+      } ${settings.darkMode ? 'bg-gray-900/95' : 'bg-gray-50/95'} backdrop-blur-sm shadow-2xl overflow-hidden`}
     >
       <div className="h-full flex flex-col">
         <div className={`sticky top-0 z-10 ${settings.darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
@@ -68,19 +77,21 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings }: S
                     onCheckedChange={(checked) => updateSetting('hideHeader', checked)}
                   />
                 </div>
-                <div className="flex items-center justify-between">
-                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Font Size</label>
-                  <Select
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Font Size
+                  </label>
+                  <select
                     value={settings.fontSize}
-                    onValueChange={(value) => updateSetting('fontSize', value)}
-                    options={[
-                      { value: 'small', label: 'Small' },
-                      { value: 'medium', label: 'Medium' },
-                      { value: 'large', label: 'Large' },
-                      { value: 'xl', label: 'Extra Large' },
-                    ]}
-                    darkMode={settings.darkMode}
-                  />
+                    onChange={(e) => onUpdateSettings({ ...settings, fontSize: e.target.value })}
+                    className="w-full p-2 border rounded-md"
+                  >
+                    {fontSizeOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -178,6 +189,25 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings }: S
                   <Switch
                     checked={settings.recordAnalytics}
                     onCheckedChange={(checked) => updateSetting('recordAnalytics', checked)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Reading Settings */}
+            <div className="space-y-4">
+              <h3 className={`text-sm font-medium ${settings.darkMode ? 'text-gray-200' : 'text-gray-900'} flex items-center gap-2`}>
+                <Type className="h-4 w-4" />
+                Reading Settings
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    Pause on Punctuation
+                  </label>
+                  <Switch
+                    checked={settings.pauseOnPunctuation}
+                    onCheckedChange={(checked) => updateSetting('pauseOnPunctuation', checked)}
                   />
                 </div>
               </div>
