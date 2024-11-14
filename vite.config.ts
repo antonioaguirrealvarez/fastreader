@@ -12,20 +12,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui': ['lucide-react', 'framer-motion'],
-          'vendor-auth': ['@supabase/supabase-js'],
-          'app-core': [
-            'react', 
-            'react-dom', 
-            'react-router-dom',
-            '@supabase/supabase-js'
-          ],
-          'app-ui': [
-            'lucide-react',
-            'framer-motion'
-          ]
+        manualChunks: (id) => {
+          // Vendor chunk for node_modules
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react';
+            if (id.includes('@supabase')) return 'vendor-supabase';
+            return 'vendor';
+          }
         }
       }
     },
