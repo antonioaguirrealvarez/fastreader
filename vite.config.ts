@@ -16,14 +16,15 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-ui': ['lucide-react', 'framer-motion'],
           'vendor-auth': ['@supabase/supabase-js'],
-          'app-components': [
-            './src/components/ui',
-            './src/components/reader'
+          'app-core': [
+            'react', 
+            'react-dom', 
+            'react-router-dom',
+            '@supabase/supabase-js'
           ],
-          'app-pages': [
-            './src/pages/Reader',
-            './src/pages/Library',
-            './src/pages/AddBook'
+          'app-ui': [
+            'lucide-react',
+            'framer-motion'
           ]
         }
       }
