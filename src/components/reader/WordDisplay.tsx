@@ -76,6 +76,19 @@ export function WordDisplay({
     
     // Remove punctuation when finding first/last letters
     const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
+    
+    // Special case for single-letter words
+    if (cleanWord.length === 1) {
+      const firstIndex = word.indexOf(cleanWord);
+      return (
+        <div className="font-mono">
+          {word.slice(0, firstIndex)}
+          <span className="font-bold text-blue-600">{cleanWord}</span>
+          {word.slice(firstIndex + 1)}
+        </div>
+      );
+    }
+
     const firstLetter = cleanWord[0];
     const lastLetter = cleanWord[cleanWord.length - 1];
     
@@ -106,19 +119,34 @@ export function WordDisplay({
     const isEven = cleanWord.length % 2 === 0;
     const middleIndex = Math.floor((cleanWord.length - 1) / 2);
 
-    // Map back to original word position
+    // Count symbols before middle letter for offset adjustment
+    let symbolsBeforeMiddle = 0;
+    let symbolsAfterMiddle = 0;
     let originalPosition = 0;
     let cleanPosition = 0;
+
     while (cleanPosition < middleIndex && originalPosition < word.length) {
-      if (!/[.,\/#!$%\^&\*;:{}=\-_`~()\s]/.test(word[originalPosition])) {
+      if (/[.,\/#!$%\^&\*;:{}=\-_`~()\s]/.test(word[originalPosition])) {
+        symbolsBeforeMiddle++;
+      } else {
         cleanPosition++;
       }
       originalPosition++;
     }
 
+    // Count remaining symbols after middle letter
+    for (let i = originalPosition + 1; i < word.length; i++) {
+      if (/[.,\/#!$%\^&\*;:{}=\-_`~()\s]/.test(word[i])) {
+        symbolsAfterMiddle++;
+      }
+    }
+
     const before = word.slice(0, originalPosition);
     const focus = word[originalPosition];
     const after = word.slice(originalPosition + 1);
+
+    // Calculate symbol-adjusted offset
+    const symbolOffset = (symbolsBeforeMiddle - symbolsAfterMiddle) * 0.25; // 0.25em per symbol
 
     return (
       <div className="relative flex items-center justify-center w-full">
@@ -128,8 +156,14 @@ export function WordDisplay({
           
           {/* Text container with monospace font and adjusted positioning */}
           <div className="font-mono relative">
-            {/* Add a half-character offset for even-length words */}
-            <div className={`relative ${isEven ? 'left-[0.25em]' : ''}`}>
+            {/* Add both even-length and symbol-based offsets */}
+            <div 
+              className="relative" 
+              style={{ 
+                left: `${isEven ? '0.25em' : '0em'}`,
+                marginLeft: `${symbolOffset}em`
+              }}
+            >
               <span className={`${settings.darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 {before}
               </span>
