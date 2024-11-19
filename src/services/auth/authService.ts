@@ -20,17 +20,30 @@ export const authService = {
   },
 
   // Sign in methods
-  signInWithGoogle: async (redirectTo?: string) => {
-    return await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectTo || `${window.location.origin}/library`,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+  signInWithGoogle: async () => {
+    const currentUrl = window.location.origin;
+    console.log('Current URL:', currentUrl);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: currentUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
         }
-      }
-    });
+      });
+
+      console.log('Sign in response:', { data, error });
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Sign in error:', error);
+      return { data: null, error };
+    }
   },
 
   signInWithEmail: async (email: string, password: string) => {
@@ -52,5 +65,21 @@ export const authService = {
     return supabase.auth.onAuthStateChange((event, session) => {
       callback(session?.user ?? null);
     });
+  },
+
+  // Add method to handle redirect
+  handleRedirect: async () => {
+    const hash = window.location.hash;
+    console.log('Handling redirect with hash:', hash);
+
+    if (hash) {
+      const { data, error } = await supabase.auth.getSession();
+      console.log('Session after redirect:', { data, error });
+      
+      // Redirect to library after successful auth
+      if (data?.session) {
+        window.location.href = '/library';
+      }
+    }
   }
 }; 

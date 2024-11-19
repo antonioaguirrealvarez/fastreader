@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { DynamicHero } from './components/DynamicHero';
 import { DemoReader } from './components/DemoReader';
 import { Features } from './components/Features';
@@ -21,6 +21,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PageBackground } from './components/ui/PageBackground';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { authService } from './services/auth/authService';
 
 function HomePage() {
   return (
@@ -40,6 +41,17 @@ function HomePage() {
       </div>
     </PageBackground>
   );
+}
+
+function AuthCallback() {
+  const location = useLocation();
+  
+  useEffect(() => {
+    console.log('Auth callback location:', location);
+    authService.handleRedirect();
+  }, [location]);
+
+  return <div>Authenticating...</div>;
 }
 
 export default function App() {
@@ -69,6 +81,7 @@ export default function App() {
             <Route path="/test/upload" element={<UploadTest />} />
             <Route path="/test/spritz" element={<SpritzTest />} />
             <Route path="/test/spritz-methods" element={<SpritzMethodsTest />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
         </AuthProvider>
       </Router>
