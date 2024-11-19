@@ -32,15 +32,5 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['framer-motion', 'react', 'react-dom']
-  },
-  server: {
-    port: 5173,
-    strictPort: true,
-    host: true
-  },
-  preview: {
-    port: 4173,
-    strictPort: true,
-    host: true
   }
 });
