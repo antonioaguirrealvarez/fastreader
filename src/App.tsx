@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { DynamicHero } from './components/DynamicHero';
 import { DemoReader } from './components/DemoReader';
 import { Features } from './components/Features';
@@ -14,7 +14,6 @@ import { SupabaseTest } from './test/SupabaseTest';
 import { ApiTest } from './test/ApiTest';
 import { UploadTest } from './test/UploadTest';
 import { SpritzTest } from './test/SpritzTest';
-import { SpritzMethodsTest } from './test/SpritzMethodsTest';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { AuthProvider } from './contexts/AuthContext';
@@ -22,6 +21,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { PageBackground } from './components/ui/PageBackground';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { authService } from './services/auth/authService';
+import { supabase } from './services/supabase/config';
 
 function HomePage() {
   return (
@@ -45,13 +45,26 @@ function HomePage() {
 
 function AuthCallback() {
   const location = useLocation();
+  const navigate = useNavigate();
   
   useEffect(() => {
     console.log('Auth callback location:', location);
-    authService.handleRedirect();
-  }, [location]);
+    const handleAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate('/library', { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
+    };
+    handleAuth();
+  }, [location, navigate]);
 
-  return <div>Authenticating...</div>;
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -80,7 +93,6 @@ export default function App() {
             <Route path="/test/api" element={<ApiTest />} />
             <Route path="/test/upload" element={<UploadTest />} />
             <Route path="/test/spritz" element={<SpritzTest />} />
-            <Route path="/test/spritz-methods" element={<SpritzMethodsTest />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
         </AuthProvider>

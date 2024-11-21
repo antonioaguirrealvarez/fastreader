@@ -22,13 +22,17 @@ export const authService = {
   // Sign in methods
   signInWithGoogle: async () => {
     const currentUrl = window.location.origin;
-    console.log('Current URL:', currentUrl);
+    const redirectUrl = currentUrl.includes('localhost') 
+      ? 'http://localhost:5173/auth/callback'  // Local development
+      : `${currentUrl}/auth/callback`;         // Production
+
+    console.log('Auth redirect URL:', redirectUrl);
 
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: currentUrl,
+          redirectTo: redirectUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -37,8 +41,6 @@ export const authService = {
       });
 
       console.log('Sign in response:', { data, error });
-
-      if (error) throw error;
       return { data, error: null };
     } catch (error) {
       console.error('Sign in error:', error);

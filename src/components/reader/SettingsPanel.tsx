@@ -10,11 +10,8 @@ interface SettingsPanelProps {
     darkMode: boolean;
     hideHeader: boolean;
     displayMode: 'highlight' | 'spritz';
-    wordsPerLine: number;
-    numberOfLines: number;
     fontSize: string;
     recordAnalytics: boolean;
-    peripheralMode: boolean;
     pauseOnPunctuation: boolean;
   };
   onClose: () => void;
@@ -41,11 +38,9 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings, hid
   ];
 
   return (
-    <div
-      className={`fixed right-0 ${hideHeader ? 'top-0' : 'top-16'} bottom-16 w-80 transform transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
-      } ${settings.darkMode ? 'bg-gray-900/95' : 'bg-gray-50/95'} backdrop-blur-sm shadow-2xl overflow-hidden`}
-    >
+    <div className={`fixed right-0 ${hideHeader ? 'top-0' : 'top-16'} bottom-16 w-80 transform transition-transform duration-300 ease-in-out ${
+      isOpen ? 'translate-x-0' : 'translate-x-full'
+    } ${settings.darkMode ? 'bg-gray-900/95' : 'bg-gray-50/95'} backdrop-blur-sm shadow-2xl overflow-hidden`}>
       <div className="h-full flex flex-col">
         <div className={`sticky top-0 z-10 ${settings.darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
           <div className="p-4 flex items-center justify-between">
@@ -102,19 +97,19 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings, hid
                 <Zap className="h-4 w-4" />
                 Reading Mode
               </h3>
-              <div className={`p-4 ${settings.darkMode ? 'bg-gray-800' : 'bg-gray-100'} rounded-lg`}>
-                <div className="flex items-center justify-between mb-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => updateSetting('displayMode', 'highlight')}
                     className={`px-4 py-2 rounded-lg transition-all ${
-                      settings.displayMode === 'highlight' 
-                        ? 'bg-blue-600 text-white' 
+                      settings.displayMode === 'highlight'
+                        ? 'bg-blue-600 text-white'
                         : settings.darkMode 
                           ? 'bg-gray-700 text-gray-300'
                           : 'bg-white text-gray-600'
                     }`}
                   >
-                    First/Last Letters
+                    Highlight Mode
                   </button>
                   <button
                     onClick={() => updateSetting('displayMode', 'spritz')}
@@ -128,68 +123,6 @@ export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings, hid
                   >
                     Spritz Mode
                   </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Display Configuration */}
-            <div className="space-y-4">
-              <h3 className={`text-sm font-medium ${settings.darkMode ? 'text-gray-200' : 'text-gray-900'} flex items-center gap-2`}>
-                <Hash className="h-4 w-4" />
-                Display Configuration
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                    Show Peripheral Words
-                  </label>
-                  <Switch
-                    checked={settings.peripheralMode}
-                    onCheckedChange={(checked) => updateSetting('peripheralMode', checked)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Words per Line</label>
-                  <Select
-                    value={settings.wordsPerLine.toString()}
-                    onValueChange={(value) => updateSetting('wordsPerLine', parseInt(value))}
-                    options={[
-                      { value: '1', label: '1 Word' },
-                      { value: '2', label: '2 Words' },
-                      { value: '3', label: '3 Words' },
-                    ]}
-                    darkMode={settings.darkMode}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Number of Lines</label>
-                  <Select
-                    value={settings.numberOfLines.toString()}
-                    onValueChange={(value) => updateSetting('numberOfLines', parseInt(value))}
-                    options={[
-                      { value: '1', label: '1 Line' },
-                      { value: '2', label: '2 Lines' },
-                      { value: '3', label: '3 Lines' },
-                    ]}
-                    darkMode={settings.darkMode}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Analytics */}
-            <div className="space-y-4">
-              <h3 className={`text-sm font-medium ${settings.darkMode ? 'text-gray-200' : 'text-gray-900'} flex items-center gap-2`}>
-                <LineChart className="h-4 w-4" />
-                Analytics
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className={`text-sm ${settings.darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Record Reading Analytics</label>
-                  <Switch
-                    checked={settings.recordAnalytics}
-                    onCheckedChange={(checked) => updateSetting('recordAnalytics', checked)}
-                  />
                 </div>
               </div>
             </div>

@@ -3,7 +3,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { loggerService } from '../services/loggerService';
 
-type DisplayMode = 'center' | 'left-align' | 'dynamic-width' | 'monospace' | 'monospace-double' | 'monospace-adjusted' | 'proportional' | 'character-based';
+type DisplayMode = 'center' | 'left-align' | 'dynamic-width' | 'monospace' | 'monospace-double' | 'monospace-adjusted' | 'punctuation-aware';
 
 interface SpritzTestProps {}
 
@@ -24,16 +24,17 @@ export function SpritzTest() {
 
     const startTime = performance.now();
 
-    // Clean the word and find the optimal recognition point (ORP)
-    const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').trim();
-    
+    let before: string;
+    let focus: string;
+    let after: string;
+
     switch (displayMode) {
       case 'monospace': {
         // Standard monospace - single letter highlight
-        const orpPosition = Math.floor((cleanWord.length - 1) / 2);
-        const before = word.slice(0, orpPosition);
-        const focus = word[orpPosition];
-        const after = word.slice(orpPosition + 1);
+        const orpPosition = Math.floor((word.length - 1) / 2);
+        before = word.slice(0, orpPosition);
+        focus = word[orpPosition];
+        after = word.slice(orpPosition + 1);
 
         return (
           <div className="flex items-center justify-center">
@@ -49,13 +50,13 @@ export function SpritzTest() {
 
       case 'monospace-double': {
         // Double letter highlight for even-length words
-        const isEven = cleanWord.length % 2 === 0;
-        const firstHighlight = Math.floor((cleanWord.length - 1) / 2);
-        const before = word.slice(0, firstHighlight);
-        const focus = isEven ? 
+        const isEven = word.length % 2 === 0;
+        const firstHighlight = Math.floor((word.length - 1) / 2);
+        before = word.slice(0, firstHighlight);
+        focus = isEven ? 
           word.slice(firstHighlight, firstHighlight + 2) : 
           word[firstHighlight];
-        const after = isEven ? 
+        after = isEven ? 
           word.slice(firstHighlight + 2) : 
           word.slice(firstHighlight + 1);
 
@@ -73,11 +74,11 @@ export function SpritzTest() {
 
       case 'monospace-adjusted': {
         // Adjusted positioning for even-length words
-        const isEven = cleanWord.length % 2 === 0;
-        const middleIndex = Math.floor((cleanWord.length - 1) / 2);
-        const before = word.slice(0, middleIndex);
-        const focus = word[middleIndex];
-        const after = word.slice(middleIndex + 1);
+        const isEven = word.length % 2 === 0;
+        const middleIndex = Math.floor((word.length - 1) / 2);
+        before = word.slice(0, middleIndex);
+        focus = word[middleIndex];
+        after = word.slice(middleIndex + 1);
 
         return (
           <div className="flex items-center justify-center">
@@ -175,6 +176,55 @@ export function SpritzTest() {
             </div>
           </div>
         );
+
+      case 'punctuation-aware': {
+        // First, identify the middle letter in the actual word (ignoring punctuation)
+        const letterPattern = /[a-zA-Z]/;
+        const letters = word.split('').filter(char => letterPattern.test(char));
+        const middleIndex = Math.floor((letters.length - 1) / 2);
+        
+        // Find this letter's position in the original word
+        let letterCount = 0;
+        let originalPosition = 0;
+        let punctuationBefore = 0;
+        
+        for (let i = 0; i < word.length; i++) {
+          if (letterPattern.test(word[i])) {
+            if (letterCount === middleIndex) {
+              originalPosition = i;
+              break;
+            }
+            letterCount++;
+          } else if (i < originalPosition) {
+            punctuationBefore++;
+          }
+        }
+
+        const punctuationAfter = word.length - (letters.length + punctuationBefore);
+        const punctuationOffset = (punctuationBefore - punctuationAfter) * 0.5;
+
+        before = word.slice(0, originalPosition);
+        focus = word[originalPosition];
+        after = word.slice(originalPosition + 1);
+
+        return (
+          <div className="flex items-center justify-center">
+            <div className="font-mono relative">
+              <div className="absolute left-1/2 w-[2px] h-full bg-red-500/20 transform -translate-x-1/2" />
+              <div 
+                className="relative" 
+                style={{ 
+                  transform: `translateX(${punctuationOffset}em)`
+                }}
+              >
+                <span className="text-gray-700">{before}</span>
+                <span className="text-red-600 font-bold mx-0.5">{focus}</span>
+                <span className="text-gray-700">{after}</span>
+              </div>
+            </div>
+          </div>
+        );
+      }
     }
   };
 
@@ -213,6 +263,7 @@ export function SpritzTest() {
                 <option value="monospace">Monospace (Standard)</option>
                 <option value="monospace-double">Monospace (Double Highlight)</option>
                 <option value="monospace-adjusted">Monospace (Adjusted Center)</option>
+                <option value="punctuation-aware">Punctuation Aware</option>
                 <option value="proportional">Proportional (35%)</option>
                 <option value="character-based">Character Width Based</option>
                 <option value="center">Simple Center</option>

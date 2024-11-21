@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { logger } from '../../utils/logger';
 import { loggerService } from '../../services/loggerService';
 
 interface WordDisplayProps {
@@ -59,8 +58,6 @@ export function WordDisplay({
     return chunks;
   };
 
-  const processedWords = splitLongWord(word);
-
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -75,16 +72,17 @@ export function WordDisplay({
     if (!word) return '...';
     
     // Remove punctuation when finding first/last letters
-    const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
+    const cleanWord = word.replace(/[.,!?;:()]/g, '').trim();
     
     // Special case for single-letter words
     if (cleanWord.length === 1) {
-      const firstIndex = word.indexOf(cleanWord);
+      // Find the position of the clean letter in the original word
+      const letterPosition = word.indexOf(cleanWord);
       return (
         <div className="font-mono">
-          {word.slice(0, firstIndex)}
+          {word.slice(0, letterPosition)}
           <span className="font-bold text-blue-600">{cleanWord}</span>
-          {word.slice(firstIndex + 1)}
+          {word.slice(letterPosition + 1)}
         </div>
       );
     }
@@ -114,54 +112,85 @@ export function WordDisplay({
   const renderSpritzWord = (word: string) => {
     if (!word) return '...';
 
-    // Clean the word and find the optimal recognition point (ORP)
-    const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').trim();
+    // Define what we consider "special characters"
+    const specialCharPattern = /[^\w\s]/g;  // Anything that's not a word character or space
+
+    // First, find the middle letter position in the clean word
+    const cleanWord = word.replace(specialCharPattern, '').trim();
     const isEven = cleanWord.length % 2 === 0;
     const middleIndex = Math.floor((cleanWord.length - 1) / 2);
 
-    // Count symbols before middle letter for offset adjustment
-    let symbolsBeforeMiddle = 0;
-    let symbolsAfterMiddle = 0;
+    // Map to position in original word and count special characters
     let originalPosition = 0;
     let cleanPosition = 0;
+    let specialCharsBefore = 0;
+    let specialCharsAfter = 0;
+    let foundMiddle = false;
 
-    while (cleanPosition < middleIndex && originalPosition < word.length) {
-      if (/[.,\/#!$%\^&\*;:{}=\-_`~()\s]/.test(word[originalPosition])) {
-        symbolsBeforeMiddle++;
+    // Count special characters and find middle letter position
+    for (let i = 0; i < word.length; i++) {
+      if (specialCharPattern.test(word[i])) {
+        if (!foundMiddle) {
+          specialCharsBefore++;
+        } else {
+          specialCharsAfter++;
+        }
       } else {
+        if (cleanPosition === middleIndex) {
+          originalPosition = i;
+          foundMiddle = true;
+        }
         cleanPosition++;
       }
-      originalPosition++;
     }
 
-    // Count remaining symbols after middle letter
-    for (let i = originalPosition + 1; i < word.length; i++) {
-      if (/[.,\/#!$%\^&\*;:{}=\-_`~()\s]/.test(word[i])) {
-        symbolsAfterMiddle++;
+    // Create balanced padding with spaces
+    const maxSymbols = Math.max(specialCharsBefore, specialCharsAfter);
+    const paddingBefore = ' '.repeat(maxSymbols - specialCharsBefore);
+    const paddingAfter = ' '.repeat(maxSymbols - specialCharsAfter);
+
+    // Apply padding to create balanced word
+    const balancedWord = paddingBefore + word + paddingAfter;
+
+    // Find the new position of the middle letter in the balanced word
+    const balancedPosition = originalPosition + paddingBefore.length;
+
+    const before = balancedWord.slice(0, balancedPosition);
+    const focus = balancedWord[balancedPosition];
+    const after = balancedWord.slice(balancedPosition + 1);
+
+    // Calculate offset for even-length words
+    const baseOffset = isEven ? 0.25 : 0;
+
+    // Log analysis to server
+    loggerService.log('debug', 'Spritz word analysis', {
+      originalWord: word,
+      cleanWord,
+      specialCharsBefore,
+      specialCharsAfter,
+      paddingBefore: paddingBefore.length,
+      paddingAfter: paddingAfter.length,
+      balancedWord,
+      originalPosition,
+      balancedPosition,
+      isEven,
+      baseOffset,
+      result: {
+        before,
+        focus,
+        after
       }
-    }
-
-    const before = word.slice(0, originalPosition);
-    const focus = word[originalPosition];
-    const after = word.slice(originalPosition + 1);
-
-    // Calculate symbol-adjusted offset
-    const symbolOffset = (symbolsBeforeMiddle - symbolsAfterMiddle) * 0.25; // 0.25em per symbol
+    });
 
     return (
       <div className="relative flex items-center justify-center w-full">
         <div className="relative w-[600px] flex items-center justify-center">
-          {/* Center line for reference */}
           <div className="absolute left-1/2 w-[2px] h-full bg-red-500/20 transform -translate-x-1/2" />
-          
-          {/* Text container with monospace font and adjusted positioning */}
           <div className="font-mono relative">
-            {/* Add both even-length and symbol-based offsets */}
             <div 
-              className="relative" 
+              className="relative whitespace-pre" 
               style={{ 
-                left: `${isEven ? '0.25em' : '0em'}`,
-                marginLeft: `${symbolOffset}em`
+                transform: `translateX(${baseOffset}em)`
               }}
             >
               <span className={`${settings.darkMode ? 'text-gray-300' : 'text-gray-700'}`}>

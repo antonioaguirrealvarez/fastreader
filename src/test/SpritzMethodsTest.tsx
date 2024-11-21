@@ -13,7 +13,8 @@ type SpritzMethod =
   | 'context-aware'
   | 'eye-tracking'
   | 'combined'
-  | 'proportional';
+  | 'proportional'
+  | 'punctuation-aware';
 
 const TEST_WORDS = [
   'the', 'quick', 'brown', 'fox', 'jumps', 'over', 'lazy', 'dog',
@@ -45,6 +46,24 @@ const EDGE_CASE_WORDS = [
   
   // Words with repeating letters
   'bookkeeper', 'committee', 'Mississippi'
+];
+
+// Add specific test cases for punctuation and special characters
+const PUNCTUATION_TEST_WORDS = [
+  'on,',
+  'the.',
+  'hello!',
+  'word;',
+  'test:',
+  'example)',
+  '(start',
+  'mid-word',
+  'multi,word',
+  'end...',
+  'multiple...dots',
+  'comma,here',
+  'semi;colon',
+  'mix.!?marks'
 ];
 
 export function SpritzMethodsTest() {
@@ -290,6 +309,71 @@ export function SpritzMethodsTest() {
     );
   };
 
+  const renderPunctuationAware = (word: string) => {
+    // First, identify the middle letter in the actual word (ignoring punctuation)
+    const letterPattern = /[a-zA-Z]/;
+    const letters = word.split('').filter(char => letterPattern.test(char));
+    const middleIndex = Math.floor((letters.length - 1) / 2);
+    
+    // Find this letter's position in the original word
+    let letterCount = 0;
+    let originalPosition = 0;
+    let punctuationBefore = 0;
+    
+    for (let i = 0; i < word.length; i++) {
+      if (letterPattern.test(word[i])) {
+        if (letterCount === middleIndex) {
+          originalPosition = i;
+          break;
+        }
+        letterCount++;
+      } else if (i < originalPosition) {
+        punctuationBefore++;
+      }
+    }
+
+    const punctuationAfter = word.length - (letters.length + punctuationBefore);
+
+    // Calculate offset based on punctuation distribution
+    const punctuationOffset = (punctuationBefore - punctuationAfter) * 0.5; // Adjust this value as needed
+
+    const before = word.slice(0, originalPosition);
+    const focus = word[originalPosition];
+    const after = word.slice(originalPosition + 1);
+
+    // Debug logging
+    console.log('Punctuation Analysis:', {
+      word,
+      letters,
+      middleIndex,
+      originalPosition,
+      punctuationBefore,
+      punctuationAfter,
+      punctuationOffset
+    });
+
+    return (
+      <div className="relative flex items-center justify-center w-full">
+        <div className="relative w-[600px] flex items-center justify-center">
+          {/* Center line for reference */}
+          <div className="absolute left-1/2 w-[2px] h-full bg-red-500/20 transform -translate-x-1/2" />
+          <div className="font-mono relative">
+            <div 
+              className="relative" 
+              style={{ 
+                transform: `translateX(${punctuationOffset}em)`
+              }}
+            >
+              <span className="text-gray-700">{before}</span>
+              <span className="text-red-600 font-bold mx-0.5">{focus}</span>
+              <span className="text-gray-700">{after}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderWord = (before: string, focus: string, after: string, totalLength: number) => {
     // Log the analysis
     loggerService.analyzeSpritzWord(before + focus + after, {
@@ -334,6 +418,7 @@ export function SpritzMethodsTest() {
       case 'eye-tracking': return renderEyeTracking;
       case 'combined': return renderCombined;
       case 'proportional': return renderProportional;
+      case 'punctuation-aware': return renderPunctuationAware;
     }
   };
 
@@ -360,6 +445,8 @@ export function SpritzMethodsTest() {
         return "Combines multiple methods for optimal positioning.";
       case 'proportional':
         return "Places focus point at 35% of word length (Spritz's approach).";
+      case 'punctuation-aware':
+        return "Places focus point at the middle letter of the word, ignoring punctuation.";
     }
   };
 
@@ -401,6 +488,7 @@ export function SpritzMethodsTest() {
                 <option value="eye-tracking">Eye-tracking</option>
                 <option value="combined">Combined</option>
                 <option value="proportional">Proportional (35%)</option>
+                <option value="punctuation-aware">Punctuation Aware</option>
               </select>
             </div>
 
@@ -460,6 +548,23 @@ export function SpritzMethodsTest() {
             {getMethodDescription(method)}
           </p>
         </Card>
+
+        {/* Add punctuation test cases */}
+        <div className="mt-4">
+          <h3 className="text-lg font-semibold mb-2">Punctuation Test Cases</h3>
+          <div className="flex flex-wrap gap-2">
+            {PUNCTUATION_TEST_WORDS.map(word => (
+              <Button
+                key={word}
+                variant={currentWord === word ? 'primary' : 'secondary'}
+                onClick={() => setCurrentWord(word)}
+                size="sm"
+              >
+                {word}
+              </Button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
