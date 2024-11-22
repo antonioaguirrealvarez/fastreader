@@ -22,6 +22,7 @@ import { PageBackground } from './components/ui/PageBackground';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { authService } from './services/auth/authService';
 import { supabase } from './services/supabase/config';
+import { FileConversionTest } from './test/FileConversionTest';
 
 function HomePage() {
   return (
@@ -93,6 +94,7 @@ export default function App() {
             <Route path="/test/api" element={<ApiTest />} />
             <Route path="/test/upload" element={<UploadTest />} />
             <Route path="/test/spritz" element={<SpritzTest />} />
+            <Route path="/test/file-conversion" element={<FileConversionTest />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
         </AuthProvider>

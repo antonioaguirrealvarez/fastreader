@@ -1,11 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Basic Supabase client setup with environment validation
-export const supabase = createClient(url, key);
+const supabaseUrl = process.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase environment variables:', {
+    url: supabaseUrl,
+    key: supabaseAnonKey ? '[HIDDEN]' : undefined,
+  });
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Utility function to check if Supabase is properly configured
 export const isSupabaseConfigured = () => {
   return (
-    import.meta.env.VITE_SUPABASE_URL &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    import.meta.env.VITE_SUPABASE_URL !== 'https://mock.supabase.co'
+    supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseUrl !== 'https://mock.supabase.co'
   );
 };

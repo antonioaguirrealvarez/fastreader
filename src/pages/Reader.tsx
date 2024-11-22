@@ -31,7 +31,7 @@ export function Reader() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { fileId, fileName, content } = (location.state as LocationState) || {};
+  const { fileId, fileName, content } = location.state || {};
   const updateProgress = useLibraryStore(state => state.updateProgress);
   const [wordsPerMinute, setWordsPerMinute] = useState(300);
   const [progress, setProgress] = useState(30);
@@ -61,13 +61,13 @@ export function Reader() {
     }
   }, [content, navigate]);
 
-  // Update progress when changing words
+  // Update progress when word changes
   useEffect(() => {
-    if (fileId && words.length > 0) {
+    if (fileId && user && words.length > 0) {
       const progress = Math.round((currentWordIndex / words.length) * 100);
-      updateProgress(fileId, progress);
+      updateProgress(fileId, progress, user.id);
     }
-  }, [currentWordIndex, fileId, words.length, updateProgress]);
+  }, [currentWordIndex, words.length, fileId, updateProgress, user]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));

@@ -1,103 +1,158 @@
-const API_URL = 'http://localhost:3001/api';
+import axios from 'axios';
 
-export const loggerService = {
-  log: async (level: string, message: string, data?: any) => {
-    try {
-      const response = await fetch(`${API_URL}/logs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          level,
-          message,
-          data,
-          timestamp: new Date().toISOString()
-        })
-      });
+export interface LogData {
+  filename?: string;
+  size?: number;
+  type?: string;
+  method?: string;
+  duration?: number;
+  wordCount?: number;
+  chapterCount?: number;
+  error?: string;
+  stack?: string;
+  progress?: number;
+  [key: string]: unknown;
+}
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.warn('Failed to send log to server, logging to console instead:', {
-        level,
-        message,
-        data,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+export interface LoggerConfig {
+  enabled: boolean;
+  serverLogging: boolean;
+  consoleLogging: boolean;
+  logLevels: {
+    debug: boolean;
+    info: boolean;
+    warn: boolean;
+    error: boolean;
+  };
+}
+
+class LoggerService {
+  private serverUrl = 'http://localhost:3000/api/logs';
+  private config: LoggerConfig = {
+    enabled: false, // Master switch
+    serverLogging: false, // Send logs to server
+    consoleLogging: false, // Console.log logs
+    logLevels: {
+      debug: false,
+      info: false,
+      warn: true, // Keep warnings on by default
+      error: true  // Keep errors on by default
     }
-  },
+  };
 
-  analyzeSpritzWord: async (word: string, analysis: {
-    cleanWord: string;
-    orpPosition: number;
-    focusLetter: string;
-    beforeLength: number;
-    afterLength: number;
-    processingTime: number;
-  }) => {
-    try {
-      const response = await fetch(`${API_URL}/logs/spritz/analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          word,
-          analysis,
-          timestamp: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+  configure(newConfig: Partial<LoggerConfig>) {
+    this.config = {
+      ...this.config,
+      ...newConfig,
+      logLevels: {
+        ...this.config.logLevels,
+        ...(newConfig.logLevels || {})
       }
+    };
+  }
 
-      return await response.json();
-    } catch (error) {
-      console.warn('Failed to log Spritz analysis:', {
-        word,
-        analysis,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+  async log(
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    data?: LogData
+  ) {
+    // Check if logging is enabled and if this level is enabled
+    if (!this.config.enabled || !this.config.logLevels[level]) {
+      return;
     }
-  },
 
-  analyzeFile: async (content: string, fileName: string) => {
-    try {
-      const response = await fetch(`${API_URL}/logs/upload/analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content,
-          fileName,
-          timestamp: new Date().toISOString()
-        })
-      });
+    const logEntry = {
+      level,
+      message,
+      data,
+      timestamp: new Date().toISOString()
+    };
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    // Server logging
+    if (this.config.serverLogging) {
+      try {
+        await axios.post(this.serverUrl, logEntry);
+      } catch (error) {
+        // Only console.error if console logging is enabled
+        if (this.config.consoleLogging) {
+          console.error('Failed to send log to server:', error);
+        }
       }
+    }
 
-      return await response.json();
-    } catch (error) {
-      console.warn('Failed to analyze file on server, analyzing locally:', {
-        fileName,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-
-      return {
-        fileName,
-        totalLength: content.length,
-        wordCount: content.split(/\s+/).length,
-        lineCount: content.split('\n').length,
-        paragraphCount: content.split('\n\n').length,
-        timestamp: new Date().toISOString(),
-        analyzedLocally: true
-      };
+    // Console logging
+    if (this.config.consoleLogging) {
+      console.log(
+        `[${logEntry.timestamp}] ${level.toUpperCase()}: ${message}`,
+        data ? '\n' + JSON.stringify(data, null, 2) : ''
+      );
     }
   }
-}; 
+
+  // Specialized logging methods
+  async logExtraction(
+    type: 'pdf' | 'epub' | 'txt',
+    phase: 'start' | 'progress' | 'complete' | 'error',
+    data: LogData
+  ) {
+    await this.log(
+      phase === 'error' ? 'error' : 'info',
+      `${type.toUpperCase()} extraction ${phase}`,
+      data
+    );
+  }
+
+  async logFileAnalysis(filename: string, content: string) {
+    if (!this.config.enabled) return null;
+
+    const analysis = {
+      filename,
+      wordCount: content.split(/\s+/).length,
+      lineCount: content.split('\n').length,
+      paragraphCount: content.split(/\n\s*\n/).length,
+      timestamp: new Date().toISOString()
+    };
+
+    await this.log('info', 'File analysis completed', analysis);
+    return analysis;
+  }
+
+  // Utility method to get current config
+  getConfig(): LoggerConfig {
+    return { ...this.config };
+  }
+}
+
+export const loggerService = new LoggerService();
+
+// Example usage:
+// Turn off all logging
+loggerService.configure({
+  enabled: false
+});
+
+// Enable only error logging to console
+loggerService.configure({
+  enabled: true,
+  serverLogging: false,
+  consoleLogging: true,
+  logLevels: {
+    debug: false,
+    info: false,
+    warn: false,
+    error: true
+  }
+});
+
+// Enable full logging
+loggerService.configure({
+  enabled: true,
+  serverLogging: true,
+  consoleLogging: true,
+  logLevels: {
+    debug: true,
+    info: true,
+    warn: true,
+    error: true
+  }
+}); 

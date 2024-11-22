@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Header } from '../components/Header';
-import { LocalUpload } from '../components/upload/LocalUpload';
 import { useLibraryStore } from '../stores/libraryStore';
 import { Button } from '../components/ui/Button';
 import { BookOpen, Upload, FileText } from 'lucide-react';
@@ -8,63 +7,155 @@ import { Card } from '../components/ui/Card';
 import { loggerService } from '../services/loggerService';
 import { Banner } from '../components/ui/Banner';
 import { PageBackground } from '../components/ui/PageBackground';
+import { pdfExtractor } from '../services/extractors/pdf/pdfExtractor';
+import { epubExtractor } from '../services/extractors/epub/epubExtractor';
+import { Progress } from '../components/ui/Progress';
+import { useAuth } from '../contexts/AuthContext';
 
 export function AddBook() {
   const addFile = useLibraryStore(state => state.addFile);
+  const { user } = useAuth();
   const [textContent, setTextContent] = useState<string>('');
   const [textTitle, setTextTitle] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
-  const handleFileAdded = (file: {
-    id: string;
-    name: string;
-    content: string;
-    timestamp: number;
-  }) => {
-    addFile(file);
-  };
+  const handleFileAdded = async (content: string, filename: string) => {
+    if (!user) {
+      setErrorMessage('Please sign in to add files');
+      return;
+    }
 
-  const handleFileUpload = async (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const content = event.target?.result as string;
-      
-      await loggerService.log('info', 'Starting file processing', {
-        fileName: file.name,
-        fileSize: file.size,
-        originalLength: content.length,
-        paragraphCount: content.split('\n\n').length,
-        wordCount: content.split(/\s+/).length,
-        lineCount: content.split('\n').length,
-        timestamp: new Date().toISOString()
-      });
+    const normalizedContent = content
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
 
-      const normalizedContent = content
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-
-      const analysis = await loggerService.analyzeFile(normalizedContent, file.name);
-      
-      handleFileAdded({
-        id: Date.now().toString(),
-        name: file.name,
-        content: normalizedContent,
-        timestamp: Date.now(),
-      });
-
-      await loggerService.log('info', 'File added to library', {
-        fileName: file.name,
-        fileId: Date.now().toString(),
-        analysis
-      });
-
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+    const analysis = {
+      wordCount: normalizedContent.split(/\s+/).length,
+      lineCount: normalizedContent.split('\n').length,
+      paragraphCount: normalizedContent.split(/\n\s*\n/).length,
+      timestamp: new Date().toISOString()
     };
 
-    reader.readAsText(file);
+    await loggerService.log('info', 'File analysis completed', {
+      filename,
+      ...analysis
+    });
+    
+    await addFile({
+      id: Date.now().toString(),
+      name: filename,
+      content: normalizedContent,
+      timestamp: Date.now(),
+    }, user.id);
+
+    await loggerService.log('info', 'File added to library', {
+      fileName: filename,
+      fileId: Date.now().toString(),
+      analysis
+    });
+
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 3000);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    setErrorMessage('');
+    setShowSuccess(false);
+    setUploadProgress(0);
+
+    try {
+      await loggerService.log('info', 'File upload started', {
+        filename: file.name,
+        type: file.type,
+        size: file.size
+      });
+
+      let text: string;
+      const fileType = file.name.split('.').pop()?.toLowerCase();
+
+      switch (fileType) {
+        case 'pdf': {
+          await loggerService.log('info', 'Starting PDF extraction', { filename: file.name });
+          const result = await pdfExtractor.extract(file, {
+            mode: 'heavy',
+            preserveFormatting: true,
+            extractImages: false,
+            extractMetadata: true,
+            removeHeaders: true,
+            removeFooters: true,
+            removePageNumbers: true
+          }, (progress) => {
+            setUploadProgress(Math.round(progress * 100));
+          });
+          text = result.text;
+          break;
+        }
+        case 'epub': {
+          await loggerService.log('info', 'Starting EPUB extraction', { filename: file.name });
+          const result = await epubExtractor.extract(file, {
+            mode: 'heavy',
+            preserveFormatting: true,
+            extractImages: false,
+            extractMetadata: true,
+            removeHeaders: true,
+            removeFooters: true,
+            removePageNumbers: true
+          }, (progress) => {
+            setUploadProgress(Math.round(progress * 100));
+          });
+          text = result.text;
+          break;
+        }
+        case 'txt': {
+          setUploadProgress(30);
+          await loggerService.log('info', 'Starting TXT processing', { filename: file.name });
+          const reader = new FileReader();
+          text = await new Promise((resolve, reject) => {
+            reader.onload = (e) => {
+              setUploadProgress(100);
+              resolve(e.target?.result as string);
+            };
+            reader.onerror = reject;
+            reader.readAsText(file);
+          });
+          break;
+        }
+        default:
+          throw new Error('Unsupported file type');
+      }
+
+      await handleFileAdded(text, file.name);
+      
+      await loggerService.log('info', 'File processing completed', {
+        filename: file.name,
+        contentLength: text.length,
+        wordCount: text.split(/\s+/).length
+      });
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'An error occurred while processing the file';
+      setErrorMessage(errorMsg);
+      
+      await loggerService.log('error', 'File processing failed', {
+        filename: file.name,
+        error: errorMsg,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
+      console.error('Error processing file:', error);
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setUploadProgress(0), 1000);
+    }
   };
 
   const handleTextInput = async () => {
@@ -74,23 +165,8 @@ export function AddBook() {
       return;
     }
 
-    const normalizedContent = textContent
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
-    handleFileAdded({
-      id: Date.now().toString(),
-      name: textTitle.trim(),
-      content: normalizedContent,
-      timestamp: Date.now(),
-    });
-
-    // Show success message
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
-
+    await handleFileAdded(textContent, textTitle.trim());
+    
     // Clear inputs after successful addition
     setTextContent('');
     setTextTitle('');
@@ -109,6 +185,17 @@ export function AddBook() {
               title="Successfully added to your library!"
               className="mb-6 animate-fade-in"
               onClose={() => setShowSuccess(false)}
+            />
+          )}
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <Banner
+              variant="error"
+              title="Error processing file"
+              description={errorMessage}
+              className="mb-6 animate-fade-in"
+              onClose={() => setErrorMessage('')}
             />
           )}
 
@@ -139,32 +226,50 @@ export function AddBook() {
                   <Upload className="h-5 w-5 text-blue-500" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Upload Text File</h2>
+                  <h2 className="text-lg font-semibold text-gray-900">Upload File</h2>
                   <p className="text-sm text-gray-500">Drag and drop or click to upload</p>
                 </div>
               </div>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 transition-colors hover:border-gray-300 h-[calc(100%-88px)] flex items-center justify-center">
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 transition-colors hover:border-gray-300 h-[calc(100%-88px)] flex flex-col">
                 <input
                   type="file"
-                  accept=".txt"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handleFileUpload(file);
-                    }
-                  }}
+                  accept=".txt,.pdf,.epub"
+                  onChange={handleFileUpload}
                   className="hidden"
                   id="file-upload"
+                  disabled={isProcessing}
                 />
                 <label
                   htmlFor="file-upload"
-                  className="flex flex-col items-center cursor-pointer w-full h-full justify-center"
+                  className={`flex-1 flex flex-col items-center cursor-pointer justify-center ${
+                    isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
                   <Upload className="h-12 w-12 text-gray-400 mb-3" />
-                  <span className="text-sm font-medium text-gray-700">Click to upload</span>
+                  <span className="text-sm font-medium text-gray-700">
+                    {isProcessing ? 'Processing...' : 'Click to upload'}
+                  </span>
                   <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
-                  <span className="text-xs text-gray-400 mt-2">Only .txt files are supported</span>
+                  <span className="text-xs text-gray-400 mt-2">
+                    Supported formats: .txt, .pdf, .epub
+                  </span>
                 </label>
+
+                {/* Progress Bar */}
+                {(isProcessing || uploadProgress > 0) && (
+                  <div className="mt-4 w-full">
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 flex justify-between text-xs text-gray-500">
+                      <span>{uploadProgress}% complete</span>
+                      <span>{isProcessing ? 'Processing...' : 'Ready'}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -210,7 +315,7 @@ export function AddBook() {
             <h3 className="text-sm font-medium text-blue-800 mb-2">Tips</h3>
             <ul className="text-sm text-blue-700 space-y-1">
               <li>• Files are stored locally in your browser</li>
-              <li>• Text files should be in plain text format (.txt)</li>
+              <li>• Supported formats: .txt, .pdf, .epub</li>
               <li>• Your content is private and secure</li>
             </ul>
           </div>
