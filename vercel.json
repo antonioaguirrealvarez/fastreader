@@ -8,8 +8,8 @@
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "env": {
-    "VITE_SUPABASE_URL": "@vite_supabase_url",
-    "VITE_SUPABASE_ANON_KEY": "@vite_supabase_anon_key"
+    "VITE_SUPABASE_URL": "https://diaevjkiwvxchirtvpsu.supabase.co",
+    "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpYWV2amtpd3Z4Y2hpcnR2cHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mjk3MjU4NTEsImV4cCI6MjA0NTMwMTg1MX0.uvX8CVPzBfQvcEMmH3RW-_EAbHxlwcnpZp16BQUgMx0"
   },
   "headers": [
     {

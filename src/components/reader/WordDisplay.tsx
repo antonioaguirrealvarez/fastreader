@@ -24,11 +24,11 @@ export function WordDisplay({
   // Remove console.log for font size
   const getFontSize = () => {
     switch (settings.fontSize) {
-      case 'small': return 'text-2xl';
-      case 'medium': return 'text-4xl';
-      case 'large': return 'text-6xl';
-      case 'extra-large': return 'text-[180px]';
-      default: return 'text-4xl';
+      case 'small': return 'text-lg sm:text-xl';
+      case 'medium': return 'text-xl sm:text-2xl';
+      case 'large': return 'text-3xl sm:text-5xl';
+      case 'extra-large': return 'text-5xl sm:text-7xl';
+      default: return 'text-xl sm:text-2xl';
     }
   };
 
@@ -184,22 +184,30 @@ export function WordDisplay({
 
     return (
       <div className="relative flex items-center justify-center w-full">
-        <div className="relative w-[600px] flex items-center justify-center">
-          <div className="absolute left-1/2 w-[2px] h-full bg-red-500/20 transform -translate-x-1/2" />
-          <div className="font-mono relative">
+        <div className="relative w-full max-w-[600px] px-4 mx-auto flex items-center justify-center">
+          <div className="absolute left-1/2 w-[1px] sm:w-[2px] h-full bg-red-500/20 transform -translate-x-1/2" />
+          <div className={`font-mono relative ${getFontSize()}`}>
             <div 
-              className="relative whitespace-pre" 
+              className="relative whitespace-pre flex items-center justify-center" 
               style={{ 
                 transform: `translateX(${baseOffset}em)`
               }}
             >
-              <span className={`${settings.darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <span 
+                className={`transition-colors duration-200 ${
+                  settings.darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}
+              >
                 {before}
               </span>
               <span className="relative mx-0.5 font-bold text-blue-600">
                 {focus}
               </span>
-              <span className={`${settings.darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <span 
+                className={`transition-colors duration-200 ${
+                  settings.darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}
+              >
                 {after}
               </span>
             </div>
@@ -210,15 +218,19 @@ export function WordDisplay({
   };
 
   return (
-    <div className={`p-8 rounded-lg ${settings.darkMode ? 'text-white' : 'text-gray-900'}`}>
+    <div 
+      className={`p-4 sm:p-8 rounded-lg ${
+        settings.darkMode ? 'text-white' : 'text-gray-900'
+      }`}
+    >
       <div className="flex flex-col items-center space-y-4">
         {settings.peripheralMode && (
-          <div className="text-gray-400 text-lg h-8 font-mono">
+          <div className="text-gray-400 text-base sm:text-lg h-8 font-mono">
             {/* Previous word context if needed */}
           </div>
         )}
         
-        <div className={`${getFontSize()} min-h-[1.5em] flex items-center justify-center`}>
+        <div className={`${getFontSize()} min-h-[1.5em] w-full flex items-center justify-center`}>
           {settings.displayMode === 'spritz' 
             ? renderSpritzWord(word)
             : renderHighlightedWord(word)
@@ -226,7 +238,7 @@ export function WordDisplay({
         </div>
 
         {settings.peripheralMode && (
-          <div className="text-gray-400 text-lg h-8 font-mono">
+          <div className="text-gray-400 text-base sm:text-lg h-8 font-mono">
             {/* Next word context if needed */}
           </div>
         )}
