@@ -23,6 +23,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { authService } from './services/auth/authService';
 import { supabase } from './services/supabase/config';
 import { FileConversionTest } from './test/FileConversionTest';
+import { SupabaseTableTest } from './test/SupabaseTableTest';
 
 function HomePage() {
   return (
@@ -96,6 +97,7 @@ export default function App() {
             <Route path="/test/spritz" element={<SpritzTest />} />
             <Route path="/test/file-conversion" element={<FileConversionTest />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/supabase-test" element={<SupabaseTableTest />} />
           </Routes>
         </AuthProvider>
       </Router>

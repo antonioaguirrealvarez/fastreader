@@ -10,6 +10,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useNavigate } from 'react-router-dom';
 import { PageBackground } from '../components/ui/PageBackground';
+import { readingProgressService } from '../services/readingProgressService';
+import { supabase } from '../lib/supabase';
+import { logger, LogCategory } from '../utils/logger';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export function Library() {
   const { user } = useAuth();
@@ -24,6 +28,10 @@ export function Library() {
   const navigate = useNavigate();
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [readingProgress, setReadingProgress] = useState<Record<string, number>>({});
+  const [isLoadingFiles, setIsLoadingFiles] = useState(true);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -31,21 +39,75 @@ export function Library() {
     }
   }, [user, loadFiles]);
 
+  useEffect(() => {
+    const loadAllProgress = async () => {
+      if (!user) return;
+      
+      try {
+        logger.debug(LogCategory.LIBRARY, 'Loading progress for books');
+        const progress = await readingProgressService.getAllProgress(user.id);
+        
+        // Create a map of fileId -> progress percentage
+        const progressMap = progress.reduce<Record<string, number>>((acc, curr) => {
+          const percentage = Math.round((curr.current_word / curr.total_words) * 100);
+          return {
+            ...acc,
+            [curr.file_id]: percentage
+          };
+        }, {});
+        
+        console.log('Progress map created:', progressMap);
+        setReadingProgress(progressMap);
+      } catch (error) {
+        logger.error(LogCategory.LIBRARY, 'Error loading progress', error);
+      }
+    };
+
+    loadAllProgress();
+  }, [user]);
+
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleDeleteFile = async (fileId: string) => {
     if (!user) return;
-    await removeFile(fileId, user.id);
+    try {
+      console.log('Deleting file:', { fileId, userId: user.id });
+      
+      // Delete file from files table
+      await removeFile(fileId, user.id);
+      
+      // Delete reading progress
+      const { error: progressError } = await supabase
+        .from('reading_progress')
+        .delete()
+        .match({ file_id: fileId, user_id: user.id });
+
+      if (progressError) {
+        console.error('Error deleting reading progress:', progressError);
+      }
+
+      // Refresh progress data
+      loadAllProgress();
+    } catch (error) {
+      console.error('Error deleting file:', error);
+    }
   };
 
-  const confirmDelete = (fileId: string) => {
+  const confirmDelete = async (fileId: string) => {
+    if (!user) return;
+
     const fileName = files.find(f => f.id === fileId)?.name;
-    removeFile(fileId);
-    setShowDeleteConfirm(null);
-    setShowDeleteSuccess(fileName || 'File');
-    setTimeout(() => setShowDeleteSuccess(''), 3000);
+    
+    try {
+      await handleDeleteFile(fileId);
+      setShowDeleteConfirm(null);
+      setShowDeleteSuccess(fileName || 'File');
+      setTimeout(() => setShowDeleteSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error in confirmDelete:', error);
+    }
   };
 
   const handleStartReading = (file: { id: string; content: string; name: string }) => {
@@ -106,21 +168,154 @@ export function Library() {
     }
   };
 
-  const deleteSelected = () => {
-    selectedFiles.forEach(id => removeFile(id));
-    setSelectedFiles(new Set());
+  const deleteSelected = async () => {
+    if (!user) return;
+    
+    try {
+      console.log('Deleting selected files:', { 
+        selectedCount: selectedFiles.size, 
+        fileIds: Array.from(selectedFiles) 
+      });
+
+      // Delete each file and its progress
+      await Promise.all(
+        Array.from(selectedFiles).map(async (fileId) => {
+          await removeFile(fileId, user.id);
+          
+          const { error: progressError } = await supabase
+            .from('reading_progress')
+            .delete()
+            .match({ file_id: fileId, user_id: user.id });
+
+          if (progressError) {
+            console.error('Error deleting reading progress:', progressError);
+          }
+        })
+      );
+
+      setSelectedFiles(new Set());
+      await loadFiles(user.id);
+      loadAllProgress(); // Refresh progress data
+    } catch (error) {
+      console.error('Error in bulk delete:', error);
+    }
   };
 
   // Calculate statistics
-  const inProgressCount = files.filter(f => 
-    f.metadata?.progress && f.metadata.progress > 0 && f.metadata.progress < 100
-  ).length;
+  const calculateStatistics = () => {
+    // Count books in progress (between 0 and 100%)
+    const inProgressCount = Object.values(readingProgress).filter(progress => 
+      progress > 0 && progress < 100
+    ).length;
 
-  const averageProgress = files.length > 0
-    ? Math.round(
-        files.reduce((acc, f) => acc + (f.metadata?.progress || 0), 0) / files.length
-      )
-    : 0;
+    // Calculate true average progress
+    const averageProgress = Object.values(readingProgress).length > 0
+      ? Math.round(
+          Object.values(readingProgress).reduce((acc, curr) => acc + curr, 0) / 
+          Object.values(readingProgress).length
+        )
+      : 0;
+
+    return { inProgressCount, averageProgress };
+  };
+
+  const { inProgressCount, averageProgress } = calculateStatistics();
+
+  // Parallel loading of files and progress
+  useEffect(() => {
+    if (!user) return;
+
+    const loadLibraryData = async () => {
+      setIsLoadingFiles(true);
+      setIsLoadingProgress(true);
+      setLoadError(null);
+
+      // Load files and progress in parallel
+      try {
+        const [filesResult, progressResult] = await Promise.allSettled([
+          // Load files with retry
+          (async () => {
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                await loadFiles(user.id);
+                return true;
+              } catch (error) {
+                if (attempt === 3) throw error;
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+              }
+            }
+          })(),
+
+          // Load progress with retry
+          (async () => {
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                const progress = await readingProgressService.getAllProgress(user.id);
+                const progressMap = progress.reduce<Record<string, number>>((acc, curr) => ({
+                  ...acc,
+                  [curr.file_id]: Math.round((curr.current_word / curr.total_words) * 100)
+                }), {});
+                setReadingProgress(progressMap);
+                return true;
+              } catch (error) {
+                if (attempt === 3) {
+                  logger.error(LogCategory.LIBRARY, 'Failed to load progress', error);
+                  return false; // Don't throw, just continue without progress
+                }
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+              }
+            }
+          })()
+        ]);
+
+        // Handle results
+        if (filesResult.status === 'rejected') {
+          throw new Error('Failed to load library files');
+        }
+
+        // Progress failure doesn't block the library
+        if (progressResult.status === 'rejected') {
+          logger.warn(LogCategory.LIBRARY, 'Failed to load reading progress, continuing without it');
+        }
+
+      } catch (error) {
+        setLoadError('Failed to load library. Please try again.');
+        logger.error(LogCategory.LIBRARY, 'Library load failed', error);
+      } finally {
+        setIsLoadingFiles(false);
+        setIsLoadingProgress(false);
+      }
+    };
+
+    loadLibraryData();
+  }, [user, loadFiles]);
+
+  // Loading UI Components
+  const LoadingSkeleton = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {[...Array(6)].map((_, i) => (
+        <div key={i} className="border rounded-lg p-4">
+          <Skeleton className="h-6 w-3/4 mb-4" />
+          <Skeleton className="h-4 w-1/2 mb-2" />
+          <Skeleton className="h-2 w-full mb-4" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ))}
+    </div>
+  );
+
+  // Error UI Component
+  const ErrorMessage = () => (
+    <div className="text-center py-8">
+      <p className="text-red-600 mb-4">{loadError}</p>
+      <Button 
+        variant="secondary" 
+        onClick={() => window.location.reload()}
+      >
+        Retry
+      </Button>
+    </div>
+  );
 
   return (
     <PageBackground>
@@ -165,27 +360,39 @@ export function Library() {
           
           {/* Summary Section */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card className="p-4 flex items-center gap-3">
-              <BookOpen className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-sm text-gray-500">Total Books</p>
-                <p className="text-2xl font-semibold text-gray-900">{files.length}</p>
-              </div>
-            </Card>
-            <Card className="p-4 flex items-center gap-3">
-              <Clock className="h-8 w-8 text-purple-600" />
-              <div>
-                <p className="text-sm text-gray-500">In Progress</p>
-                <p className="text-2xl font-semibold text-gray-900">{inProgressCount}</p>
-              </div>
-            </Card>
-            <Card className="p-4 flex items-center gap-3">
-              <Star className="h-8 w-8 text-yellow-500" />
-              <div>
-                <p className="text-sm text-gray-500">Average Progress</p>
-                <p className="text-2xl font-semibold text-gray-900">{averageProgress}%</p>
-              </div>
-            </Card>
+            {isLoadingFiles ? (
+              [...Array(3)].map((_, i) => (
+                <Card key={i} className="p-4">
+                  <Skeleton className="h-8 w-8 mb-2" />
+                  <Skeleton className="h-4 w-24 mb-1" />
+                  <Skeleton className="h-6 w-12" />
+                </Card>
+              ))
+            ) : (
+              <>
+                <Card className="p-4 flex items-center gap-3">
+                  <BookOpen className="h-8 w-8 text-blue-600" />
+                  <div>
+                    <p className="text-sm text-gray-500">Total Books</p>
+                    <p className="text-2xl font-semibold text-gray-900">{files.length}</p>
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3">
+                  <Clock className="h-8 w-8 text-purple-600" />
+                  <div>
+                    <p className="text-sm text-gray-500">In Progress</p>
+                    <p className="text-2xl font-semibold text-gray-900">{inProgressCount}</p>
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3">
+                  <Star className="h-8 w-8 text-yellow-500" />
+                  <div>
+                    <p className="text-sm text-gray-500">Average Progress</p>
+                    <p className="text-2xl font-semibold text-gray-900">{averageProgress}%</p>
+                  </div>
+                </Card>
+              </>
+            )}
           </div>
           
           {/* Search, Filter, and Selection Controls */}
@@ -242,84 +449,90 @@ export function Library() {
           </div>
 
           {/* Book Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredFiles.map(file => (
-              <Card
-                key={file.id}
-                className={`overflow-hidden transition-all duration-200 hover:shadow-lg group ${
-                  selectedFiles.has(file.id) ? 'ring-2 ring-blue-500' : ''
-                }`}
-                onClick={() => handleStartReading(file)}
-              >
-                <div className="p-4 flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <button
-                      onClick={(e) => toggleFileSelection(file.id, e)}
-                      className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          {loadError ? (
+            <ErrorMessage />
+          ) : isLoadingFiles ? (
+            <LoadingSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredFiles.map(file => (
+                <Card
+                  key={file.id}
+                  className={`overflow-hidden transition-all duration-200 hover:shadow-lg group ${
+                    selectedFiles.has(file.id) ? 'ring-2 ring-blue-500' : ''
+                  }`}
+                  onClick={() => handleStartReading(file)}
+                >
+                  <div className="p-4 flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <button
+                        onClick={(e) => toggleFileSelection(file.id, e)}
+                        className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        {selectedFiles.has(file.id) ? (
+                          <CheckSquare className="h-5 w-5 text-blue-500" />
+                        ) : (
+                          <Square className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                        )}
+                      </button>
+                      <div>
+                        <h3 className="font-medium text-gray-900">{file.name}</h3>
+                        <p className="text-sm text-gray-500">
+                          Added {new Date(file.timestamp).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFile(file.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-600 hover:bg-red-50 -mt-1 -mr-2"
                     >
-                      {selectedFiles.has(file.id) ? (
-                        <CheckSquare className="h-5 w-5 text-blue-500" />
-                      ) : (
-                        <Square className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-                      )}
-                    </button>
-                    <div>
-                      <h3 className="font-medium text-gray-900">{file.name}</h3>
-                      <p className="text-sm text-gray-500">
-                        Added {new Date(file.timestamp).toLocaleDateString()}
-                      </p>
-                    </div>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(file.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-600 hover:bg-red-50 -mt-1 -mr-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
 
-                {/* Keep existing progress bar and Start Reading button */}
-                <div className="p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Text File</span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 transition-all duration-300"
-                        style={{ width: `${file.metadata?.progress || 0}%` }}
-                      />
+                  {/* Keep existing progress bar and Start Reading button */}
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Text File</span>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>
-                        {file.metadata?.progress 
-                          ? `${file.metadata.progress}% complete` 
-                          : 'Not started'}
-                      </span>
-                      <span>{Math.round(file.content.length / 200)} min read</span>
+                    <div className="space-y-1">
+                      <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-600 transition-all duration-300"
+                          style={{ width: `${readingProgress[file.id] || 0}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>
+                          {readingProgress[file.id] 
+                            ? `${readingProgress[file.id]}% complete` 
+                            : 'Not started'}
+                        </span>
+                        <span>{Math.round(file.content.length / 200)} min read</span>
+                      </div>
                     </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="w-full mt-2 flex items-center justify-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartReading(file);
+                      }}
+                    >
+                      <BookOpen className="h-4 w-4" />
+                      Start Reading
+                    </Button>
                   </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full mt-2 flex items-center justify-center gap-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartReading(file);
-                    }}
-                  >
-                    <BookOpen className="h-4 w-4" />
-                    Start Reading
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ReaderHeader } from '../components/reader/ReaderHeader';
 import { WordDisplay } from '../components/reader/WordDisplay';
 import { ReaderControls } from '../components/reader/ReaderControls';
@@ -7,7 +7,8 @@ import { SettingsPanel } from '../components/reader/SettingsPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLibraryStore } from '../stores/libraryStore';
-import { logger } from '../utils/logger';
+import { logger, LogCategory } from '../utils/logger';
+import { readingProgressService } from '../services/readingProgressService';
 
 interface ReaderSettings {
   darkMode: boolean;
@@ -61,13 +62,78 @@ export function Reader() {
     }
   }, [content, navigate]);
 
-  // Update progress when word changes
+  // Update the initial progress loading effect
   useEffect(() => {
-    if (fileId && user && words.length > 0) {
-      const progress = Math.round((currentWordIndex / words.length) * 100);
-      updateProgress(fileId, progress, user.id);
+    const loadProgress = async () => {
+      if (!user?.id || !fileId || !content) {
+        logger.debug(LogCategory.READER, 'Skipping progress load', {
+          hasUser: !!user?.id,
+          hasFileId: !!fileId,
+          hasContent: !!content
+        });
+        return;
+      }
+
+      try {
+        logger.debug(LogCategory.READER, 'Loading initial progress', {
+          fileId,
+          userId: user.id
+        });
+
+        const savedProgress = await readingProgressService.getProgress(user.id, fileId);
+        
+        if (savedProgress) {
+          logger.debug(LogCategory.READER, 'Loaded saved progress', {
+            currentWord: savedProgress.current_word,
+            totalWords: savedProgress.total_words,
+            percentage: Math.round((savedProgress.current_word / savedProgress.total_words) * 100)
+          });
+          setCurrentWordIndex(savedProgress.current_word);
+        } else {
+          logger.debug(LogCategory.READER, 'No saved progress found, starting from beginning');
+        }
+      } catch (error) {
+        logger.error(LogCategory.READER, 'Failed to load progress', error);
+        // Continue without progress data
+      }
+    };
+
+    // Only load progress once at mount
+    loadProgress();
+  }, [user?.id, fileId, content]);
+
+  // Update the progress saving effect
+  useEffect(() => {
+    // Skip initial render, unnecessary updates, and Spritz analysis
+    if (!user?.id || !fileId || words.length === 0 || currentWordIndex === 0) {
+      return;
     }
-  }, [currentWordIndex, words.length, fileId, updateProgress, user]);
+
+    // Update every 100 words or on last word
+    if (currentWordIndex % 100 === 0 || currentWordIndex === words.length - 1) {
+      const percentage = Math.round((currentWordIndex / words.length) * 100);
+      
+      logger.debug(LogCategory.READER, 'Saving progress', {
+        currentWord: currentWordIndex,
+        totalWords: words.length,
+        percentage
+      });
+
+      // Use an IIFE to handle the async operation
+      (async () => {
+        try {
+          await readingProgressService.updateProgress({
+            user_id: user.id,
+            file_id: fileId,
+            current_word: currentWordIndex,
+            total_words: words.length
+          });
+        } catch (error) {
+          logger.error(LogCategory.READER, 'Failed to save progress', error);
+        }
+      })();
+    }
+  }, [currentWordIndex, user?.id, fileId, words.length]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
@@ -103,28 +169,27 @@ export function Reader() {
     if (direction === 'next' && currentWordIndex < words.length - 1) {
       const currentWord = words[currentWordIndex];
       
-      // Check for punctuation that needs pauses
-      const shouldPause = settings.pauseOnPunctuation && (
-        /[.,!?]$/.test(currentWord) ||  // End punctuation
-        /[()]/.test(currentWord)     // Parentheses
-      );
-      
-      logger.log('debug', 'Word change', {
-        currentWord,
-        shouldPause,
-        hasPunctuation: /[.,!?()]/.test(currentWord)
-      });
+      // Only log Spritz analysis if pauseOnPunctuation is enabled
+      if (settings.pauseOnPunctuation) {
+        const shouldPause = /[.,!?]$/.test(currentWord) || /[()]/.test(currentWord);
+        
+        logger.debug(LogCategory.SPRITZ, 'Word change', {
+          currentWord,
+          shouldPause,
+          hasPunctuation: /[.,!?()]/.test(currentWord)
+        });
 
-      if (shouldPause && isPlaying) {
-        // Pause before moving to next word
-        setIsPlaying(false);
-        setTimeout(() => {
-          setCurrentWordIndex(prev => prev + 1);
-          setIsPlaying(true);
-        }, /[.,!?]$/.test(currentWord) ? 400 : 200); // Longer pause for end punctuation
-      } else {
-        setCurrentWordIndex(prev => prev + 1);
+        if (shouldPause && isPlaying) {
+          setIsPlaying(false);
+          setTimeout(() => {
+            setCurrentWordIndex(prev => prev + 1);
+            setIsPlaying(true);
+          }, /[.,!?]$/.test(currentWord) ? 400 : 200);
+          return;
+        }
       }
+      
+      setCurrentWordIndex(prev => prev + 1);
     } else if (direction === 'prev' && currentWordIndex > 0) {
       setCurrentWordIndex(prev => prev - 1);
     }
