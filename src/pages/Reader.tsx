@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ReaderHeader } from '../components/reader/ReaderHeader';
 import { WordDisplay } from '../components/reader/WordDisplay';
 import { ReaderControls } from '../components/reader/ReaderControls';
@@ -7,6 +7,7 @@ import { SettingsPanel } from '../components/reader/SettingsPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLibraryStore } from '../stores/libraryStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { logger, LogCategory } from '../utils/logger';
 import { readingProgressService } from '../services/readingProgressService';
 
@@ -14,18 +15,9 @@ interface ReaderSettings {
   darkMode: boolean;
   hideHeader: boolean;
   displayMode: 'highlight' | 'spritz';
-  wordsPerLine: number;
-  numberOfLines: number;
   fontSize: string;
   recordAnalytics: boolean;
-  peripheralMode: boolean;
   pauseOnPunctuation: boolean;
-}
-
-interface LocationState {
-  fileId: string;
-  fileName: string;
-  content: string;
 }
 
 export function Reader() {
@@ -34,117 +26,106 @@ export function Reader() {
   const navigate = useNavigate();
   const { fileId, fileName, content } = location.state || {};
   const updateProgress = useLibraryStore(state => state.updateProgress);
-  const [wordsPerMinute, setWordsPerMinute] = useState(300);
-  const [progress, setProgress] = useState(30);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<ReaderSettings>({
+  
+  // Settings from store
+  const { 
+    localSettings,
+    isLoading: isLoadingSettings,
+    error: settingsError,
+    loadSettings,
+    updateLocalSettings
+  } = useSettingsStore();
+
+  // Local settings state (synced with store)
+  const [settings, setSettings] = useState<ReaderSettings>(localSettings || {
     darkMode: false,
     hideHeader: false,
     displayMode: 'highlight',
-    wordsPerLine: 1,
-    numberOfLines: 1,
-    fontSize: 'large',
+    fontSize: 'medium',
     recordAnalytics: true,
-    peripheralMode: false,
     pauseOnPunctuation: false,
   });
 
-  // Add state for current word
+  const [wordsPerMinute, setWordsPerMinute] = useState(300);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const words = content?.split(/\s+/) || [];
 
-  // If no content is provided, redirect to library
+  // Single effect for initial data loading
   useEffect(() => {
-    if (!content) {
-      navigate('/library');
-    }
-  }, [content, navigate]);
+    let mounted = true;
 
-  // Update the initial progress loading effect
-  useEffect(() => {
-    const loadProgress = async () => {
+    const loadInitialData = async () => {
       if (!user?.id || !fileId || !content) {
-        logger.debug(LogCategory.READER, 'Skipping progress load', {
-          hasUser: !!user?.id,
-          hasFileId: !!fileId,
-          hasContent: !!content
-        });
+        logger.debug(LogCategory.READER, 'Skipping initial load - missing data');
         return;
       }
 
       try {
-        logger.debug(LogCategory.READER, 'Loading initial progress', {
-          fileId,
-          userId: user.id
-        });
-
+        // Load progress
         const savedProgress = await readingProgressService.getProgress(user.id, fileId);
         
+        if (!mounted) return;
+
         if (savedProgress) {
-          logger.debug(LogCategory.READER, 'Loaded saved progress', {
+          logger.debug(LogCategory.READER, 'Initial data loaded', {
             currentWord: savedProgress.current_word,
             totalWords: savedProgress.total_words,
             percentage: Math.round((savedProgress.current_word / savedProgress.total_words) * 100)
           });
           setCurrentWordIndex(savedProgress.current_word);
-        } else {
-          logger.debug(LogCategory.READER, 'No saved progress found, starting from beginning');
+        }
+
+        // Only load settings if not already in store
+        if (!localSettings) {
+          await loadSettings(user.id);
         }
       } catch (error) {
-        logger.error(LogCategory.READER, 'Failed to load progress', error);
-        // Continue without progress data
+        if (!mounted) return;
+        logger.error(LogCategory.READER, 'Failed to load initial data', error);
       }
     };
 
-    // Only load progress once at mount
-    loadProgress();
-  }, [user?.id, fileId, content]);
+    loadInitialData();
 
-  // Update the progress saving effect
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, fileId, content, localSettings, loadSettings]);
+
+  // Update progress saving effect - with debounce
   useEffect(() => {
-    // Skip initial render, unnecessary updates, and Spritz analysis
     if (!user?.id || !fileId || words.length === 0 || currentWordIndex === 0) {
       return;
     }
 
-    // Update every 100 words or on last word
-    if (currentWordIndex % 100 === 0 || currentWordIndex === words.length - 1) {
+    const saveProgress = async () => {
       const percentage = Math.round((currentWordIndex / words.length) * 100);
       
-      logger.debug(LogCategory.READER, 'Saving progress', {
-        currentWord: currentWordIndex,
-        totalWords: words.length,
-        percentage
-      });
+      try {
+        await readingProgressService.updateProgress({
+          user_id: user.id,
+          file_id: fileId,
+          current_word: currentWordIndex,
+          total_words: words.length
+        });
 
-      // Use an IIFE to handle the async operation
-      (async () => {
-        try {
-          await readingProgressService.updateProgress({
-            user_id: user.id,
-            file_id: fileId,
-            current_word: currentWordIndex,
-            total_words: words.length
-          });
-        } catch (error) {
-          logger.error(LogCategory.READER, 'Failed to save progress', error);
-        }
-      })();
+        logger.debug(LogCategory.READER, 'Progress saved', { percentage });
+      } catch (error) {
+        logger.error(LogCategory.READER, 'Failed to save progress', error);
+      }
+    };
+
+    // Only save every 100 words or on last word
+    if (currentWordIndex % 100 === 0 || currentWordIndex === words.length - 1) {
+      saveProgress();
     }
   }, [currentWordIndex, user?.id, fileId, words.length]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
-  };
-
-  const handleSkipForward = () => {
-    setProgress(Math.min(100, progress + 5));
-  };
-
-  const handleSkipBackward = () => {
-    setProgress(Math.max(0, progress - 5));
   };
 
   const handleTogglePlay = () => {
@@ -162,22 +143,26 @@ export function Reader() {
   };
 
   const handleUpdateSettings = (newSettings: ReaderSettings) => {
+    if (!user?.id) return;
+    
     setSettings(newSettings);
+    updateLocalSettings(newSettings, user.id);
   };
 
   const handleWordChange = (direction: 'next' | 'prev') => {
     if (direction === 'next' && currentWordIndex < words.length - 1) {
       const currentWord = words[currentWordIndex];
       
-      // Only log Spritz analysis if pauseOnPunctuation is enabled
+      // Only handle Spritz pausing if enabled
       if (settings.pauseOnPunctuation) {
         const shouldPause = /[.,!?]$/.test(currentWord) || /[()]/.test(currentWord);
         
-        logger.debug(LogCategory.SPRITZ, 'Word change', {
-          currentWord,
-          shouldPause,
-          hasPunctuation: /[.,!?()]/.test(currentWord)
-        });
+        // Spritz logging disabled
+        // logger.debug(LogCategory.SPRITZ, 'Word change', {
+        //   currentWord,
+        //   shouldPause,
+        //   hasPunctuation: /[.,!?()]/.test(currentWord)
+        // });
 
         if (shouldPause && isPlaying) {
           setIsPlaying(false);
@@ -200,14 +185,18 @@ export function Reader() {
     setCurrentWordIndex(newIndex);
   };
 
+  const handleBackToLibrary = () => {
+    navigate('/library');
+  };
+
   return (
     <div className={`min-h-screen flex flex-col ${settings.darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
       {!settings.hideHeader && (
         <ReaderHeader 
           title={fileName || 'Unknown Book'}
-          author=""
           chapter={`${currentWordIndex + 1} of ${words.length} words`}
           darkMode={settings.darkMode}
+          onBackToLibrary={handleBackToLibrary}
         />
       )}
       
@@ -229,7 +218,7 @@ export function Reader() {
           />
         </main>
 
-        <SettingsPanel 
+        <SettingsPanel
           isOpen={isSettingsOpen}
           settings={settings}
           onClose={() => setIsSettingsOpen(false)}

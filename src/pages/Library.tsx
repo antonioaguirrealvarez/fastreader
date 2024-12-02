@@ -14,6 +14,7 @@ import { readingProgressService } from '../services/readingProgressService';
 import { supabase } from '../lib/supabase';
 import { logger, LogCategory } from '../utils/logger';
 import { Skeleton } from '../components/ui/Skeleton';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export function Library() {
   const { user } = useAuth();
@@ -33,20 +34,26 @@ export function Library() {
   const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Single effect for initial data loading
   useEffect(() => {
-    if (user) {
-      loadFiles(user.id);
-    }
-  }, [user, loadFiles]);
+    let mounted = true;
 
-  useEffect(() => {
-    const loadAllProgress = async () => {
-      if (!user) return;
-      
+    const loadInitialData = async () => {
+      if (!user?.id) return;
+
       try {
-        logger.debug(LogCategory.LIBRARY, 'Loading progress for books');
+        setIsLoadingFiles(true);
+        setIsLoadingProgress(true);
+
+        // Load files
+        await loadFiles(user.id);
+
+        // Load progress
+        logger.debug(LogCategory.LIBRARY, 'Loading initial library data');
         const progress = await readingProgressService.getAllProgress(user.id);
         
+        if (!mounted) return;
+
         // Create a map of fileId -> progress percentage
         const progressMap = progress.reduce<Record<string, number>>((acc, curr) => {
           const percentage = Math.round((curr.current_word / curr.total_words) * 100);
@@ -56,15 +63,31 @@ export function Library() {
           };
         }, {});
         
-        console.log('Progress map created:', progressMap);
         setReadingProgress(progressMap);
+        setIsLoadingProgress(false);
+
+        // Preload settings
+        const { loadSettings } = useSettingsStore.getState();
+        await loadSettings(user.id);
+
       } catch (error) {
-        logger.error(LogCategory.LIBRARY, 'Error loading progress', error);
+        if (!mounted) return;
+        logger.error(LogCategory.LIBRARY, 'Error loading library data', error);
+        setLoadError(error instanceof Error ? error.message : 'Failed to load library data');
+      } finally {
+        if (mounted) {
+          setIsLoadingFiles(false);
+          setIsLoadingProgress(false);
+        }
       }
     };
 
-    loadAllProgress();
-  }, [user]);
+    loadInitialData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, loadFiles]);
 
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())

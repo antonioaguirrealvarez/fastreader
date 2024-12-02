@@ -1,48 +1,49 @@
 import React from 'react';
 import { Button } from '../ui/Button';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface ReaderHeaderProps {
   title: string;
+  chapter: string;
   darkMode: boolean;
-  hideHeader: boolean;
+  isSaving?: boolean;
 }
 
-export function ReaderHeader({ title, darkMode, hideHeader }: ReaderHeaderProps) {
+export function ReaderHeader({ title, chapter, darkMode, isSaving }: ReaderHeaderProps) {
+  const navigate = useNavigate();
+
+  const handleBackToLibrary = () => {
+    navigate('/library');
+  };
+
   return (
-    <header 
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        hideHeader ? '-translate-y-full' : 'translate-y-0'
-      } ${
-        darkMode 
-          ? 'bg-gray-900/90 border-b border-gray-800' 
-          : 'bg-white/90 border-b border-gray-100 shadow-sm'
-      } backdrop-blur-md`}
-    >
-      <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-14">
-          <div className="flex-1 min-w-0">
-            <h1 
-              className={`font-medium truncate max-w-[200px] sm:max-w-[300px] md:max-w-[500px] lg:max-w-full 
-                ${darkMode ? 'text-white' : 'text-gray-900'}
-                text-lg tracking-tight`}
-              title={title}
-            >
-              {title}
-            </h1>
-          </div>
+    <header className={`fixed top-0 left-0 right-0 h-16 ${darkMode ? 'bg-gray-800/95 text-white' : 'bg-white/95 text-gray-800'} shadow-md z-50 backdrop-blur-sm`}>
+      <div className="container mx-auto px-4 h-full flex items-center justify-between">
+        <div className="flex items-center space-x-4 min-w-0">
+          <h1 className="text-xl font-bold truncate">{title}</h1>
+          <span className="text-sm opacity-75 hidden sm:inline">{chapter}</span>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          {isSaving && (
+            <span className="text-sm text-gray-500 animate-pulse hidden sm:inline">
+              Saving progress...
+            </span>
+          )}
           
-          <Button 
-            variant={darkMode ? "ghost" : "primary"}
-            onClick={() => window.location.href = '/library'}
-            className={`flex items-center gap-2 transition-all duration-150 ml-4
-              ${darkMode 
-                ? 'text-gray-300 hover:text-white hover:bg-white/10' 
-                : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
-              }`}
+          <Button
+            onClick={handleBackToLibrary}
+            variant="ghost"
+            size="sm"
+            className={`flex items-center gap-2 ${
+              darkMode 
+                ? 'hover:bg-gray-700 text-gray-200' 
+                : 'hover:bg-gray-100 text-gray-700'
+            }`}
           >
-            <BookOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Go to Library</span>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Back to Library</span>
           </Button>
         </div>
       </div>
