@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { logger, LogCategory } from '../utils/logger';
+import { loggingCore } from '../services/logging/core';
 
 interface ReadingSettings {
   highlightWords: boolean;
@@ -39,15 +40,26 @@ export function useReadingProcessor({
   const animationFrameRef = useRef<number>();
 
   // Process text into words with metadata
-  const processText = (text: string): ProcessedWord[] => {
-    return text.split(/\s+/)
-      .filter(word => word.length > 0)
-      .map(word => ({
-        text: word,
-        isCapitalized: /^[A-Z]/.test(word),
-        length: word.length
-      }));
-  };
+  const processText = useCallback((text: string) => {
+    loggingCore.log('PROCESSING', 'start_processing', { textLength: text.length });
+    try {
+      const result = text.split(/\s+/)
+        .filter(word => word.length > 0)
+        .map(word => ({
+          text: word,
+          isCapitalized: /^[A-Z]/.test(word),
+          length: word.length
+        }));
+      loggingCore.log('PROCESSING', 'processing_complete', { 
+        processedLength: result.length,
+        duration: performance.now() - startTime
+      });
+      return result;
+    } catch (error) {
+      loggingCore.log('PROCESSING', 'processing_error', { error }, { level: 'error' });
+      throw error;
+    }
+  }, []);
 
   // Format word with settings
   const formatWord = (word: string) => {

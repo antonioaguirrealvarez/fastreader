@@ -1,27 +1,34 @@
-import React from 'react';
-import { Slider } from '../ui/Slider';
+import { useEffect, useState } from 'react';
+import { progressService } from '../../services/progress/progressService';
 
-interface ProgressBarProps {
-  progress: number;
-  darkMode: boolean;
-}
+export function ProgressBar() {
+  const [progress, setProgress] = useState<number>(0);
+  const [readingSpeed, setReadingSpeed] = useState<number>(0);
 
-export function ProgressBar({ progress, darkMode }: ProgressBarProps) {
-  const darkModeClasses = darkMode ? {
-    track: 'bg-gray-700',
-    bar: 'bg-blue-600 group-hover:bg-blue-500',
-  } : {
-    track: 'bg-gray-200',
-    bar: 'bg-blue-600 group-hover:bg-blue-700',
-  };
+  useEffect(() => {
+    // Update progress state every 100ms
+    const interval = setInterval(() => {
+      const currentProgress = progressService.getProgress();
+      if (currentProgress) {
+        setProgress(currentProgress.completionPercentage);
+        setReadingSpeed(currentProgress.readingSpeed);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <Slider 
-      value={progress} 
-      onChange={(value) => console.log(value)} 
-      darkMode={darkMode}
-      trackClassName={darkModeClasses.track}
-      barClassName={darkModeClasses.bar}
-    />
+    <div className="w-full">
+      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div 
+          className="h-full bg-blue-600 transition-all duration-200"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-2 text-sm text-gray-600">
+        {Math.round(progress)}% • {Math.round(readingSpeed)} WPM
+      </div>
+    </div>
   );
 }

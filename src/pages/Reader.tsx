@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ReaderHeader } from '../components/reader/ReaderHeader';
 import { WordDisplay } from '../components/reader/WordDisplay';
 import { ReaderControls } from '../components/reader/ReaderControls';
@@ -10,6 +10,9 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { logger, LogCategory } from '../utils/logger';
 import { readingProgressService } from '../services/readingProgressService';
+import { progressService } from '../services/progress/progressService';
+import { loggingCore } from '../services/logging/core';
+import { LogLevel } from '../services/logging/types';
 
 interface ReaderSettings {
   darkMode: boolean;
@@ -53,76 +56,57 @@ export function Reader() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const words = content?.split(/\s+/) || [];
 
-  // Single effect for initial data loading
+  const hasInitialized = useRef(false);
+
+  // Split into two effects - one for progress initialization, one for settings
   useEffect(() => {
-    let mounted = true;
-
-    const loadInitialData = async () => {
-      if (!user?.id || !fileId || !content) {
-        logger.debug(LogCategory.READER, 'Skipping initial load - missing data');
-        return;
-      }
-
-      try {
-        // Load progress
-        const savedProgress = await readingProgressService.getProgress(user.id, fileId);
-        
-        if (!mounted) return;
-
-        if (savedProgress) {
-          logger.debug(LogCategory.READER, 'Initial data loaded', {
-            currentWord: savedProgress.current_word,
-            totalWords: savedProgress.total_words,
-            percentage: Math.round((savedProgress.current_word / savedProgress.total_words) * 100)
-          });
-          setCurrentWordIndex(savedProgress.current_word);
-        }
-
-        // Only load settings if not already in store
-        if (!localSettings) {
-          await loadSettings(user.id);
-        }
-      } catch (error) {
-        if (!mounted) return;
-        logger.error(LogCategory.READER, 'Failed to load initial data', error);
-      }
-    };
-
-    loadInitialData();
-
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id, fileId, content, localSettings, loadSettings]);
-
-  // Update progress saving effect - with debounce
-  useEffect(() => {
-    if (!user?.id || !fileId || words.length === 0 || currentWordIndex === 0) {
-      return;
-    }
-
-    const saveProgress = async () => {
-      const percentage = Math.round((currentWordIndex / words.length) * 100);
+    if (hasInitialized.current) return;
+    
+    const initializeReaderProgress = async () => {
+      if (!user?.id || !fileId || !content) return;
       
       try {
-        await readingProgressService.updateProgress({
-          user_id: user.id,
-          file_id: fileId,
-          current_word: currentWordIndex,
-          total_words: words.length
-        });
+        hasInitialized.current = true;
 
-        logger.debug(LogCategory.READER, 'Progress saved', { percentage });
+        // First load saved progress
+        const savedProgress = await progressService.getProgress(user.id, fileId);
+        
+        // Set initial word index if we have saved progress
+        if (savedProgress) {
+          setCurrentWordIndex(savedProgress.current_word);
+          loggingCore.log(LogCategory.READING_STATE, 'progress_loaded', {
+            currentWord: savedProgress.current_word,
+            totalWords: savedProgress.total_words
+          }, { level: LogLevel.INFO });
+        }
+
+        // Then initialize progress service
+        await progressService.initializeProgress(user.id, fileId, content.length);
       } catch (error) {
-        logger.error(LogCategory.READER, 'Failed to save progress', error);
+        hasInitialized.current = false;
+        loggingCore.log(LogCategory.ERROR, 'progress_initialization_failed', {
+          error,
+          userId: user.id,
+          fileId
+        }, { level: LogLevel.ERROR });
       }
     };
 
-    // Only save every 100 words or on last word
-    if (currentWordIndex % 100 === 0 || currentWordIndex === words.length - 1) {
-      saveProgress();
-    }
-  }, [currentWordIndex, user?.id, fileId, words.length]);
+    initializeReaderProgress();
+  }, [user?.id, fileId, content]);
+
+  // Separate effect for settings
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const loadSettings = async () => {
+      if (!localSettings) {
+        await loadSettings(user.id);
+      }
+    };
+
+    loadSettings();
+  }, [user?.id, localSettings, loadSettings]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
@@ -150,34 +134,15 @@ export function Reader() {
   };
 
   const handleWordChange = (direction: 'next' | 'prev') => {
-    if (direction === 'next' && currentWordIndex < words.length - 1) {
-      const currentWord = words[currentWordIndex];
+    setCurrentWordIndex(current => {
+      const newIndex = direction === 'next' 
+        ? Math.min(current + 1, content.length - 1)
+        : Math.max(current - 1, 0);
       
-      // Only handle Spritz pausing if enabled
-      if (settings.pauseOnPunctuation) {
-        const shouldPause = /[.,!?]$/.test(currentWord) || /[()]/.test(currentWord);
-        
-        // Spritz logging disabled
-        // logger.debug(LogCategory.SPRITZ, 'Word change', {
-        //   currentWord,
-        //   shouldPause,
-        //   hasPunctuation: /[.,!?()]/.test(currentWord)
-        // });
-
-        if (shouldPause && isPlaying) {
-          setIsPlaying(false);
-          setTimeout(() => {
-            setCurrentWordIndex(prev => prev + 1);
-            setIsPlaying(true);
-          }, /[.,!?]$/.test(currentWord) ? 400 : 200);
-          return;
-        }
-      }
-      
-      setCurrentWordIndex(prev => prev + 1);
-    } else if (direction === 'prev' && currentWordIndex > 0) {
-      setCurrentWordIndex(prev => prev - 1);
-    }
+      // This should be moved to WordDisplay and use progressService
+      progressService.updateProgress(newIndex, { shouldSync: true });
+      return newIndex;
+    });
   };
 
   const handleProgressChange = (newProgress: number) => {
@@ -211,6 +176,10 @@ export function Reader() {
         <main className="flex-1 flex items-center justify-center">
           <WordDisplay 
             word={words[currentWordIndex] || ''}
+            wordIndex={currentWordIndex}
+            totalWords={words.length}
+            userId={user?.id || ''}
+            fileId={fileId}
             wordsPerMinute={wordsPerMinute}
             isPlaying={isPlaying}
             settings={settings}

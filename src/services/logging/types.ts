@@ -1,24 +1,33 @@
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export enum LogLevel {
+  DEBUG = 'DEBUG',
+  INFO = 'INFO',
+  WARN = 'WARN',
+  ERROR = 'ERROR'
+}
 
-export type LogCategory = 
-  | 'SPRITZ'
-  | 'READER'
-  | 'PERFORMANCE'
-  | 'USER_INTERACTION'
-  | 'ERROR'
-  | 'ANALYTICS'
-  | 'FULLTEXT';
-
-export interface LogMetadata {
-  timestamp: number;
-  category: LogCategory;
-  component?: string;
-  duration?: number;
-  [key: string]: unknown;
+export enum LogCategory {
+  READING_STATE = 'READING_STATE',
+  READING_PROGRESS = 'READING_PROGRESS',
+  DISPLAY = 'DISPLAY',
+  PERFORMANCE = 'PERFORMANCE',
+  ERROR = 'ERROR'
 }
 
 export interface LogEntry {
+  timestamp: number;
   level: LogLevel;
-  message: string;
-  metadata: LogMetadata;
+  category: LogCategory;
+  event: string;
+  data: unknown;
+  sessionId?: string;
+  userId?: string;
+}
+
+export interface LoggingConfig {
+  wordLevelLogging: {
+    spritzAnalysis: boolean;
+    displayProcessing: boolean;
+    readingProgress: boolean;
+  };
+  // ... other config
 } 
