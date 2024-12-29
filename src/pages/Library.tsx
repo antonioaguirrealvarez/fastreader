@@ -10,11 +10,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useNavigate } from 'react-router-dom';
 import { PageBackground } from '../components/ui/PageBackground';
-import { readingProgressService } from '../services/readingProgressService';
+import { progressService } from '../services/database/progress';
 import { supabase } from '../lib/supabase';
 import { logger, LogCategory } from '../utils/logger';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useSettingsStore } from '../stores/settingsStore';
+import { loggingCore } from '../services/logging/core';
+import { settingsService } from '../services/database/settings';
 
 export function Library() {
   const { user } = useAuth();
@@ -33,6 +35,30 @@ export function Library() {
   const [isLoadingFiles, setIsLoadingFiles] = useState(true);
   const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const { loadSettings } = useSettingsStore();
+
+  useEffect(() => {
+    const initializeSettings = async () => {
+      if (!user?.id) return;
+      
+      try {
+        // This will create settings if they don't exist
+        await settingsService.initializeUserSettings(user.id);
+        await loadSettings(user.id);
+        
+        loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_library', {
+          userId: user.id
+        });
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'settings_load_failed_library', {
+          error,
+          userId: user.id
+        });
+      }
+    };
+
+    initializeSettings();
+  }, [user?.id]);
 
   // Single effect for initial data loading
   useEffect(() => {
@@ -50,7 +76,7 @@ export function Library() {
 
         // Load progress
         logger.debug(LogCategory.LIBRARY, 'Loading initial library data');
-        const progress = await readingProgressService.getAllProgress(user.id);
+        const progress = await progressService.getAllProgress(user.id);
         
         if (!mounted) return;
 
@@ -273,7 +299,7 @@ export function Library() {
           (async () => {
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {
-                const progress = await readingProgressService.getAllProgress(user.id);
+                const progress = await progressService.getAllProgress(user.id);
                 const progressMap = progress.reduce<Record<string, number>>((acc, curr) => ({
                   ...acc,
                   [curr.file_id]: Math.round((curr.current_word / curr.total_words) * 100)

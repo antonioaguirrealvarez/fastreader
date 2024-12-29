@@ -153,42 +153,24 @@ class LoggingCore {
   }
 
   log(category: LogCategory, event: string, data: unknown, options?: LogOptions) {
-    try {
-      if (!this.shouldLog(category, event, options?.level ?? LogLevel.INFO, data)) {
-        return;
-      }
-
-      const timestamp = options?.timestamp || Date.now();
-      const level = options?.level || LogLevel.INFO;
-      const correlationId = options?.correlationId || crypto.randomUUID();
-
-      // Remove grouping logic, just log directly
-      if (process.env.NODE_ENV === 'development') {
-        console.log(
-          `[${level}] ${category}:${event}`,
-          {
-            ...data,
-            _meta: {
-              timestamp: new Date(timestamp).toISOString(),
-              correlationId
-            }
-          }
-        );
-      }
-
-      return {
-        timestamp,
-        category,
-        event,
-        data,
-        level,
-        correlationId
-      };
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Logging error:', error);
-      }
+    // Check if we should log this event based on config
+    if (!this.shouldLog(category, event, options?.level ?? LogLevel.INFO, data)) {
+      return;
     }
+
+    const entry = {
+      timestamp: Date.now(),
+      level: options?.level || LogLevel.INFO,
+      category,
+      event,
+      data,
+      _meta: {
+        timestamp: new Date().toISOString(),
+        correlationId: crypto.randomUUID()
+      }
+    };
+
+    console.log(`[${entry.level}] ${category}:${event}`, entry.data);
   }
 
   startOperation(category: LogCategory, operation: string, data?: unknown, options?: LogOptions) {

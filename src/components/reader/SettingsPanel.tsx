@@ -3,31 +3,38 @@ import { Layout, Zap, Moon, Type, BookText, Hash, LineChart, Eye } from 'lucide-
 import { Switch } from '../ui/Switch';
 import { Select } from '../ui/Select';
 import { CloseButton } from '../ui/CloseButton';
+import { settingsService } from '../../services/database/settings';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SettingsPanelProps {
   isOpen: boolean;
-  settings: {
-    darkMode: boolean;
-    hideHeader: boolean;
-    displayMode: 'highlight' | 'spritz';
-    fontSize: string;
-    recordAnalytics: boolean;
-    pauseOnPunctuation: boolean;
-  };
+  settings: ReaderSettings;
   onClose: () => void;
-  onUpdateSettings: (settings: SettingsPanelProps['settings']) => void;
+  onUpdateSettings: (settings: ReaderSettings) => void;
   hideHeader: boolean;
 }
 
 export function SettingsPanel({ isOpen, settings, onClose, onUpdateSettings, hideHeader }: SettingsPanelProps) {
-  const updateSetting = <K extends keyof SettingsPanelProps['settings']>(
+  const { user } = useAuth();
+
+  const updateSetting = <K extends keyof ReaderSettings>(
     key: K,
-    value: SettingsPanelProps['settings'][K]
+    value: ReaderSettings[K]
   ) => {
-    onUpdateSettings({
+    const newSettings = {
       ...settings,
       [key]: value,
-    });
+    };
+    
+    onUpdateSettings(newSettings);
+
+    // The batching is now handled by the settings service
+    if (user?.id) {
+      settingsService.updateSettings({
+        user_id: user.id,
+        ...settingsService.convertToSnakeCase(newSettings)
+      });
+    }
   };
 
   const fontSizeOptions = [

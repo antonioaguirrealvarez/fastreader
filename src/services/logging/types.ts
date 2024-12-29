@@ -1,16 +1,17 @@
 export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
-  WARN = 'WARN',
   ERROR = 'ERROR'
 }
 
 export enum LogCategory {
+  PROGRESS = 'PROGRESS',
+  ERROR = 'ERROR',
   READING_STATE = 'READING_STATE',
-  READING_PROGRESS = 'READING_PROGRESS',
   DISPLAY = 'DISPLAY',
-  PERFORMANCE = 'PERFORMANCE',
-  ERROR = 'ERROR'
+  SUPABASE = 'SUPABASE',
+  DEBUG = 'DEBUG',
+  SETTINGS = 'SETTINGS'
 }
 
 export interface LogEntry {

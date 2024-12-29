@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
+import { settingsService } from '../services/database/settings';
 
 interface AuthContextType {
   user: User | null;
@@ -60,6 +61,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error signing out:', error);
       throw error;
+    }
+  };
+
+  const signUp = async (email: string, password: string) => {
+    try {
+      const { data: { user }, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (user) {
+        // Initialize user settings
+        await settingsService.initializeUserSettings(user.id);
+      }
+
+      return { user, error: null };
+    } catch (error) {
+      return { user: null, error };
     }
   };
 

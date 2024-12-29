@@ -9,10 +9,19 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { logger, LogCategory } from '../utils/logger';
-import { readingProgressService } from '../services/readingProgressService';
-import { progressService } from '../services/progress/progressService';
+import { progressService } from '../services/database/progress';
 import { loggingCore } from '../services/logging/core';
 import { LogLevel } from '../services/logging/types';
+import { loggingConfig, LoggingMode } from '../services/logging/config';
+import { settingsService } from '../services/database/settings';
+import { DEFAULT_SETTINGS } from '../types/settings';
+
+// Set logging mode once at the top level
+loggingConfig.setMode(
+  process.env.NODE_ENV === 'development' 
+    ? LoggingMode.VERBOSE 
+    : LoggingMode.MINIMAL
+);
 
 interface ReaderSettings {
   darkMode: boolean;
@@ -32,22 +41,41 @@ export function Reader() {
   
   // Settings from store
   const { 
-    localSettings,
-    isLoading: isLoadingSettings,
-    error: settingsError,
+    settings,
     loadSettings,
-    updateLocalSettings
+    updateSettings
   } = useSettingsStore();
 
-  // Local settings state (synced with store)
-  const [settings, setSettings] = useState<ReaderSettings>(localSettings || {
-    darkMode: false,
-    hideHeader: false,
-    displayMode: 'highlight',
-    fontSize: 'medium',
-    recordAnalytics: true,
-    pauseOnPunctuation: false,
-  });
+  // Load settings on mount
+  useEffect(() => {
+    const initializeSettings = async () => {
+      if (!user?.id) return;
+      
+      try {
+        await loadSettings(user.id);
+        loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_reader', {
+          userId: user.id
+        });
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'settings_load_failed_reader', {
+          error,
+          userId: user.id
+        });
+      }
+    };
+
+    initializeSettings();
+
+    // Cleanup function
+    return () => {
+      if (user?.id) {
+        settingsService.clearCache(user.id);
+      }
+    };
+  }, [user?.id]);
+
+  // Use settings from store with fallback
+  const readerSettings = settings || DEFAULT_SETTINGS;
 
   const [wordsPerMinute, setWordsPerMinute] = useState(300);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -74,10 +102,6 @@ export function Reader() {
         // Set initial word index if we have saved progress
         if (savedProgress) {
           setCurrentWordIndex(savedProgress.current_word);
-          loggingCore.log(LogCategory.READING_STATE, 'progress_loaded', {
-            currentWord: savedProgress.current_word,
-            totalWords: savedProgress.total_words
-          }, { level: LogLevel.INFO });
         }
 
         // Then initialize progress service
@@ -94,19 +118,6 @@ export function Reader() {
 
     initializeReaderProgress();
   }, [user?.id, fileId, content]);
-
-  // Separate effect for settings
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const loadSettings = async () => {
-      if (!localSettings) {
-        await loadSettings(user.id);
-      }
-    };
-
-    loadSettings();
-  }, [user?.id, localSettings, loadSettings]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
@@ -129,8 +140,7 @@ export function Reader() {
   const handleUpdateSettings = (newSettings: ReaderSettings) => {
     if (!user?.id) return;
     
-    setSettings(newSettings);
-    updateLocalSettings(newSettings, user.id);
+    updateSettings(newSettings, user.id);
   };
 
   const handleWordChange = (direction: 'next' | 'prev') => {
@@ -138,9 +148,6 @@ export function Reader() {
       const newIndex = direction === 'next' 
         ? Math.min(current + 1, content.length - 1)
         : Math.max(current - 1, 0);
-      
-      // This should be moved to WordDisplay and use progressService
-      progressService.updateProgress(newIndex, { shouldSync: true });
       return newIndex;
     });
   };
@@ -154,23 +161,39 @@ export function Reader() {
     navigate('/library');
   };
 
+  // Add progress tracking
+  useEffect(() => {
+    if (!user?.id || !fileId || currentWordIndex === 0) {
+      return;
+    }
+
+    progressService.updateProgress({
+      user_id: user.id,
+      file_id: fileId,
+      current_word: currentWordIndex,
+      total_words: words.length
+    }).catch(() => {
+      // Error already logged in service
+    });
+  }, [currentWordIndex, user?.id, fileId, words.length]);
+
   return (
-    <div className={`min-h-screen flex flex-col ${settings.darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      {!settings.hideHeader && (
+    <div className={`min-h-screen flex flex-col ${readerSettings.darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {!readerSettings.hideHeader && (
         <ReaderHeader 
           title={fileName || 'Unknown Book'}
           chapter={`${currentWordIndex + 1} of ${words.length} words`}
-          darkMode={settings.darkMode}
+          darkMode={readerSettings.darkMode}
           onBackToLibrary={handleBackToLibrary}
         />
       )}
       
-      <div className={`flex flex-1 ${settings.hideHeader ? '' : 'mt-16'} mb-16`}>
+      <div className={`flex flex-1 ${readerSettings.hideHeader ? '' : 'mt-16'} mb-16`}>
         <LibrarySidebar 
           isOpen={isLibraryOpen}
           onClose={() => setIsLibraryOpen(false)}
-          darkMode={settings.darkMode}
-          hideHeader={settings.hideHeader}
+          darkMode={readerSettings.darkMode}
+          hideHeader={readerSettings.hideHeader}
         />
 
         <main className="flex-1 flex items-center justify-center">
@@ -182,17 +205,17 @@ export function Reader() {
             fileId={fileId}
             wordsPerMinute={wordsPerMinute}
             isPlaying={isPlaying}
-            settings={settings}
+            settings={readerSettings}
             onWordChange={handleWordChange}
           />
         </main>
 
         <SettingsPanel
           isOpen={isSettingsOpen}
-          settings={settings}
+          settings={readerSettings}
           onClose={() => setIsSettingsOpen(false)}
           onUpdateSettings={handleUpdateSettings}
-          hideHeader={settings.hideHeader}
+          hideHeader={readerSettings.hideHeader}
         />
       </div>
 
@@ -200,7 +223,7 @@ export function Reader() {
         progress={(currentWordIndex / words.length) * 100}
         wordsPerMinute={wordsPerMinute}
         isPlaying={isPlaying}
-        darkMode={settings.darkMode}
+        darkMode={readerSettings.darkMode}
         onSpeedChange={handleSpeedChange}
         onTogglePlay={handleTogglePlay}
         onSkipForward={() => setCurrentWordIndex(prev => Math.min(prev + 10, words.length - 1))}

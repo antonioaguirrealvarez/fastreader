@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { progressService } from '../../services/progress/progressService';
+import { progressService } from '../../services/database/progress';
 
 export function ProgressBar() {
   const [progress, setProgress] = useState<number>(0);

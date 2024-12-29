@@ -90,46 +90,6 @@ export function WordDisplay({
       ? Math.min(wordIndex + 1, totalWords - 1)
       : Math.max(wordIndex - 1, 0);
 
-    // Debug log for word change
-    loggingCore.log(LogCategory.READING_STATE, 'word_change', {
-      direction,
-      from: wordIndex,
-      to: newIndex,
-      totalWords,
-      userId,
-      fileId,
-      timestamp: Date.now()
-    }, { level: LogLevel.DEBUG });
-
-    // Check if we should save progress (every 100 words or last word)
-    if (newIndex % 100 === 0 || newIndex === totalWords - 1) {
-      loggingCore.log(LogCategory.READING_STATE, 'progress_save_triggered', {
-        wordIndex: newIndex,
-        reason: newIndex % 100 === 0 ? 'batch_boundary' : 'last_word',
-        userId,
-        fileId,
-        timestamp: Date.now()
-      }, { level: LogLevel.INFO });
-
-      // Call progress service
-      progressService.updateProgress({
-        user_id: userId,
-        file_id: fileId,
-        current_word: newIndex,
-        total_words: totalWords,
-        updated_at: new Date().toISOString()
-      }).catch(error => {
-        loggingCore.log(LogCategory.ERROR, 'progress_save_error', {
-          error,
-          wordIndex: newIndex,
-          userId,
-          fileId,
-          timestamp: Date.now()
-        }, { level: LogLevel.ERROR });
-      });
-    }
-
-    // Call parent's onWordChange after our handling
     onWordChange(direction);
   };
 
