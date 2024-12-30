@@ -1,73 +1,82 @@
-import { EPUBLightExtractor } from './lightExtractor';
-import { EPUBHeavyExtractor } from './heavyExtractor';
-import { EpubJsExtractor } from './epubjs';
-import { ExtractionOptions, ExtractionResult } from '../types';
-import { loggerService } from '../../loggerService';
+import { Book } from 'epubjs';
+import { loggingCore, LogCategory } from '../../logging/core';
 
-export class EPUBExtractorService {
-  private extractors: {
-    light: EPUBLightExtractor;
-    heavy: EPUBHeavyExtractor;
-    epubjs: EpubJsExtractor;
-  };
+export interface EpubExtractOptions {
+  mode: 'light' | 'heavy';
+  preserveFormatting?: boolean;
+  extractImages?: boolean;
+  extractMetadata?: boolean;
+  removeHeaders?: boolean;
+  removeFooters?: boolean;
+  removePageNumbers?: boolean;
+}
 
-  constructor() {
-    this.extractors = {
-      light: new EPUBLightExtractor(),
-      heavy: new EPUBHeavyExtractor(),
-      epubjs: new EpubJsExtractor()
-    };
-  }
-
+class EpubExtractor {
   async extract(
-    file: File, 
-    options: ExtractionOptions,
+    file: File,
+    options: EpubExtractOptions,
     onProgress?: (progress: number) => void
-  ): Promise<ExtractionResult> {
-    const startTime = Date.now();
-    
+  ) {
+    const operationId = loggingCore.startOperation(LogCategory.FILE, 'epub_extract', {
+      filename: file.name,
+      size: file.size,
+      options
+    });
+
     try {
-      loggerService.log('info', 'Starting EPUB extraction', {
+      const arrayBuffer = await file.arrayBuffer();
+      const book = new Book(arrayBuffer);
+      await book.ready;
+
+      loggingCore.log(LogCategory.FILE, 'epub_loaded', {
         filename: file.name,
-        mode: options.mode,
-        size: file.size
+        chapterCount: book.spine.length,
+        operationId
       });
 
-      const effectiveMode = options.mode === 'epub-convert' ? 'heavy' : options.mode;
-      const extractor = this.getExtractor(effectiveMode);
-      
-      const result = await extractor.extract(file, options, onProgress);
+      let text = '';
+      let processedChapters = 0;
 
-      loggerService.log('info', 'EPUB extraction completed', {
+      for (const chapter of book.spine) {
+        const content = await chapter.load();
+        const chapterText = content.textContent || '';
+        text += chapterText + '\n\n';
+
+        processedChapters++;
+        if (onProgress) {
+          onProgress(processedChapters / book.spine.length);
+        }
+
+        loggingCore.log(LogCategory.FILE, 'epub_chapter_processed', {
+          filename: file.name,
+          chapter: processedChapters,
+          totalChapters: book.spine.length,
+          operationId
+        });
+      }
+
+      const result = {
+        text: text.trim(),
+        metadata: book.metadata
+      };
+
+      loggingCore.endOperation(LogCategory.FILE, 'epub_extract', operationId, {
         filename: file.name,
-        mode: effectiveMode,
-        duration: Date.now() - startTime,
-        wordCount: result.metadata?.words
+        chapterCount: book.spine.length,
+        wordCount: result.text.split(/\s+/).length
       });
 
       return result;
     } catch (error) {
-      loggerService.log('error', 'EPUB extraction failed', {
+      loggingCore.log(LogCategory.ERROR, 'epub_extraction_failed', {
         filename: file.name,
-        mode: options.mode,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        operationId
       });
       throw error;
     }
   }
-
-  private getExtractor(mode: string) {
-    switch (mode) {
-      case 'light':
-        return this.extractors.light;
-      case 'heavy':
-        return this.extractors.heavy;
-      case 'epubjs':
-        return this.extractors.epubjs;
-      default:
-        throw new Error(`Unknown extraction mode: ${mode}`);
-    }
-  }
 }
 
-export const epubExtractor = new EPUBExtractorService(); 
+export const epubExtractor = new EpubExtractor(); 

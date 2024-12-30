@@ -1,6 +1,6 @@
-import { LogLevel, LogCategory, LogEntry } from './types';
+import { LogLevel, LogEntry } from './types';
 
-export { LogLevel, LogCategory };
+export { LogLevel };
 
 interface LogOptions {
   level: LogLevel;
@@ -92,6 +92,19 @@ const LOG_THRESHOLDS = {
   }
 } as const;
 
+export enum LogCategory {
+  LIBRARY = 'LIBRARY',
+  FILE = 'FILE',
+  SETTINGS = 'SETTINGS',
+  PROGRESS = 'PROGRESS',
+  READING_STATE = 'READING_STATE',
+  PERFORMANCE = 'PERFORMANCE',
+  DISPLAY = 'DISPLAY',
+  PROCESSING = 'PROCESSING',
+  ERROR = 'ERROR',
+  DEBUG = 'DEBUG'
+}
+
 class LoggingCore {
   private lastLog: Map<string, number>;
   private debounceTime: number;
@@ -152,16 +165,21 @@ class LoggingCore {
     return this.config.wordLevelLogging.displayProcessing;
   }
 
-  log(category: LogCategory, event: string, data: unknown, options?: LogOptions) {
-    // Check if we should log this event based on config
-    if (!this.shouldLog(category, event, options?.level ?? LogLevel.INFO, data)) {
+  log(category: LogCategory, event: string, data: unknown, options?: Partial<LogOptions>) {
+    const finalOptions = {
+      level: LogLevel.INFO,
+      category,
+      ...options
+    };
+
+    if (!this.shouldLog(category, event, finalOptions.level, data)) {
       return;
     }
 
     const entry = {
       timestamp: Date.now(),
-      level: options?.level || LogLevel.INFO,
-      category,
+      level: finalOptions.level,
+      category: finalOptions.category,
       event,
       data,
       _meta: {

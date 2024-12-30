@@ -1,22 +1,16 @@
 import React from 'react';
 import { Button } from '../ui/Button';
-import { BookOpen, ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 
 interface ReaderHeaderProps {
   title: string;
   chapter: string;
   darkMode: boolean;
   isSaving?: boolean;
+  onBackToLibrary: () => void;
 }
 
-export function ReaderHeader({ title, chapter, darkMode, isSaving }: ReaderHeaderProps) {
-  const navigate = useNavigate();
-
-  const handleBackToLibrary = () => {
-    navigate('/library');
-  };
-
+export function ReaderHeader({ title, chapter, darkMode, isSaving, onBackToLibrary }: ReaderHeaderProps) {
   return (
     <header className={`fixed top-0 left-0 right-0 h-16 ${darkMode ? 'bg-gray-800/95 text-white' : 'bg-white/95 text-gray-800'} shadow-md z-50 backdrop-blur-sm`}>
       <div className="container mx-auto px-4 h-full flex items-center justify-between">
@@ -33,7 +27,7 @@ export function ReaderHeader({ title, chapter, darkMode, isSaving }: ReaderHeade
           )}
           
           <Button
-            onClick={handleBackToLibrary}
+            onClick={onBackToLibrary}
             variant="ghost"
             size="sm"
             className={`flex items-center gap-2 ${

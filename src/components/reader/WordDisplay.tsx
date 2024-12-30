@@ -47,7 +47,10 @@ export function WordDisplay({
         fileId,
         sessionId: sessionId.current,
         settings
-      }, { level: LogLevel.INFO });
+      }, { 
+        level: LogLevel.INFO,
+        category: LogCategory.READING_STATE
+      });
 
       return () => {
         loggingCore.log(LogCategory.READING_STATE, 'session_end', {
@@ -56,7 +59,10 @@ export function WordDisplay({
           sessionId: sessionId.current,
           finalPosition: wordIndex,
           duration: Date.now() - lastPerformanceLog.current
-        }, { level: LogLevel.INFO });
+        }, { 
+          level: LogLevel.INFO,
+          category: LogCategory.READING_STATE
+        });
       };
     }
   }, [userId, fileId]);
@@ -139,7 +145,11 @@ export function WordDisplay({
     loggingCore.log(LogCategory.DISPLAY, 'word_render', {
       word,
       settings,
+      wordIndex,
       renderTime: performance.now()
+    }, {
+      level: LogLevel.INFO,
+      category: LogCategory.DISPLAY
     });
 
     loggingCore.endOperation(LogCategory.DISPLAY, 'word_processing', groupId, {

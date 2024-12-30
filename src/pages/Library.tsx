@@ -11,12 +11,20 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useNavigate } from 'react-router-dom';
 import { PageBackground } from '../components/ui/PageBackground';
 import { progressService } from '../services/database/progress';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase/client';
 import { logger, LogCategory } from '../utils/logger';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useSettingsStore } from '../stores/settingsStore';
 import { loggingCore } from '../services/logging/core';
 import { settingsService } from '../services/database/settings';
+import type { LibraryFile } from '../types/supabase';
+
+// Add proper type for progress data
+interface ProgressData {
+  file_id: string;
+  current_word: number;
+  total_words: number;
+}
 
 export function Library() {
   const { user } = useAuth();
@@ -36,70 +44,59 @@ export function Library() {
   const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { loadSettings } = useSettingsStore();
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
-  useEffect(() => {
-    const initializeSettings = async () => {
-      if (!user?.id) return;
-      
-      try {
-        // This will create settings if they don't exist
-        await settingsService.initializeUserSettings(user.id);
-        await loadSettings(user.id);
-        
-        loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_library', {
-          userId: user.id
-        });
-      } catch (error) {
-        loggingCore.log(LogCategory.ERROR, 'settings_load_failed_library', {
-          error,
-          userId: user.id
-        });
-      }
-    };
-
-    initializeSettings();
-  }, [user?.id]);
-
-  // Single effect for initial data loading
   useEffect(() => {
     let mounted = true;
-
+    
     const loadInitialData = async () => {
-      if (!user?.id) return;
+      if (!user?.id || isInitialized) return;
 
+      const operationId = crypto.randomUUID();
+      
       try {
         setIsLoadingFiles(true);
         setIsLoadingProgress(true);
 
-        // Load files
-        await loadFiles(user.id);
+        // Single settings initialization
+        if (!isInitialized) {
+          await settingsService.initializeUserSettings(user.id);
+          await loadSettings(user.id);
+          
+          if (!mounted) return;
 
-        // Load progress
-        logger.debug(LogCategory.LIBRARY, 'Loading initial library data');
-        const progress = await progressService.getAllProgress(user.id);
-        
+          loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_library', {
+            userId: user.id,
+            operationId,
+            timestamp: Date.now()
+          });
+        }
+
+        // Load files and progress in parallel
+        const [files, progress] = await Promise.all([
+          supabase.listLibraryFiles(user.id),
+          progressService.getAllProgress(user.id)
+        ]);
+
         if (!mounted) return;
 
-        // Create a map of fileId -> progress percentage
+        // Update library store
+        useLibraryStore.setState({ files });
+
+        // Process progress data
         const progressMap = progress.reduce<Record<string, number>>((acc, curr) => {
           const percentage = Math.round((curr.current_word / curr.total_words) * 100);
-          return {
-            ...acc,
-            [curr.file_id]: percentage
-          };
+          return { ...acc, [curr.file_id]: percentage };
         }, {});
         
         setReadingProgress(progressMap);
-        setIsLoadingProgress(false);
-
-        // Preload settings
-        const { loadSettings } = useSettingsStore.getState();
-        await loadSettings(user.id);
+        setIsInitialized(true);
 
       } catch (error) {
         if (!mounted) return;
-        logger.error(LogCategory.LIBRARY, 'Error loading library data', error);
-        setLoadError(error instanceof Error ? error.message : 'Failed to load library data');
+        const message = error instanceof Error ? error.message : 'Failed to load library data';
+        setLoadError(message);
       } finally {
         if (mounted) {
           setIsLoadingFiles(false);
@@ -113,49 +110,69 @@ export function Library() {
     return () => {
       mounted = false;
     };
-  }, [user?.id, loadFiles]);
+  }, [user?.id]);
 
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleDeleteFile = async (fileId: string) => {
-    if (!user) return;
+  const loadAllProgress = async () => {
+    if (!user?.id) return;
     try {
-      console.log('Deleting file:', { fileId, userId: user.id });
-      
-      // Delete file from files table
-      await removeFile(fileId, user.id);
-      
-      // Delete reading progress
-      const { error: progressError } = await supabase
-        .from('reading_progress')
-        .delete()
-        .match({ file_id: fileId, user_id: user.id });
-
-      if (progressError) {
-        console.error('Error deleting reading progress:', progressError);
-      }
-
-      // Refresh progress data
-      loadAllProgress();
+      const progress = await progressService.getAllProgress(user?.id);
+      const progressMap = progress.reduce<Record<string, number>>((acc, curr) => {
+        const percentage = Math.round((curr.current_word / curr.total_words) * 100);
+        return { ...acc, [curr.file_id]: percentage };
+      }, {});
+      setReadingProgress(progressMap);
     } catch (error) {
-      console.error('Error deleting file:', error);
+      loggingCore.log(LogCategory.ERROR, 'progress_load_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId: user.id
+      });
     }
   };
 
-  const confirmDelete = async (fileId: string) => {
+  const handleDeleteFile = async (fileId: string) => {
     if (!user) return;
+    setShowDeleteConfirm(fileId); // Show confirmation dialog first
+  };
+
+  const confirmDelete = async (fileId: string) => {
+    if (!user?.id) return;
 
     const fileName = files.find(f => f.id === fileId)?.name;
     
     try {
-      await handleDeleteFile(fileId);
+      loggingCore.log(LogCategory.LIBRARY, 'file_delete_started', {
+        fileId,
+        userId: user.id,
+        fileName
+      });
+
+      await supabase.deleteLibraryFile(fileId, user.id);
+      
+      // Refresh library data
+      await loadFiles(user.id);
+      await loadAllProgress();
+
       setShowDeleteConfirm(null);
       setShowDeleteSuccess(fileName || 'File');
+      
+      loggingCore.log(LogCategory.LIBRARY, 'file_delete_completed', {
+        fileId,
+        userId: user.id,
+        fileName
+      });
+
       setTimeout(() => setShowDeleteSuccess(''), 3000);
     } catch (error) {
-      console.error('Error in confirmDelete:', error);
+      loggingCore.log(LogCategory.ERROR, 'file_delete_failed', {
+        fileId,
+        userId: user.id,
+        fileName,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
@@ -218,35 +235,26 @@ export function Library() {
   };
 
   const deleteSelected = async () => {
-    if (!user) return;
+    if (!user?.id || selectedFiles.size === 0) return;
+    setShowBulkDeleteConfirm(true); // Show confirmation dialog first
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!user?.id || selectedFiles.size === 0) return;
     
     try {
-      console.log('Deleting selected files:', { 
-        selectedCount: selectedFiles.size, 
-        fileIds: Array.from(selectedFiles) 
-      });
-
-      // Delete each file and its progress
-      await Promise.all(
-        Array.from(selectedFiles).map(async (fileId) => {
-          await removeFile(fileId, user.id);
-          
-          const { error: progressError } = await supabase
-            .from('reading_progress')
-            .delete()
-            .match({ file_id: fileId, user_id: user.id });
-
-          if (progressError) {
-            console.error('Error deleting reading progress:', progressError);
-          }
-        })
-      );
-
+      await supabase.bulkDeleteFiles(Array.from(selectedFiles), user.id);
+      
       setSelectedFiles(new Set());
       await loadFiles(user.id);
-      loadAllProgress(); // Refresh progress data
+      await loadAllProgress();
+      setShowBulkDeleteConfirm(false);
     } catch (error) {
-      console.error('Error in bulk delete:', error);
+      loggingCore.log(LogCategory.ERROR, 'bulk_delete_failed', {
+        userId: user.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        fileIds: Array.from(selectedFiles)
+      });
     }
   };
 
@@ -269,75 +277,6 @@ export function Library() {
   };
 
   const { inProgressCount, averageProgress } = calculateStatistics();
-
-  // Parallel loading of files and progress
-  useEffect(() => {
-    if (!user) return;
-
-    const loadLibraryData = async () => {
-      setIsLoadingFiles(true);
-      setIsLoadingProgress(true);
-      setLoadError(null);
-
-      // Load files and progress in parallel
-      try {
-        const [filesResult, progressResult] = await Promise.allSettled([
-          // Load files with retry
-          (async () => {
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              try {
-                await loadFiles(user.id);
-                return true;
-              } catch (error) {
-                if (attempt === 3) throw error;
-                await new Promise(r => setTimeout(r, 1000 * attempt));
-              }
-            }
-          })(),
-
-          // Load progress with retry
-          (async () => {
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              try {
-                const progress = await progressService.getAllProgress(user.id);
-                const progressMap = progress.reduce<Record<string, number>>((acc, curr) => ({
-                  ...acc,
-                  [curr.file_id]: Math.round((curr.current_word / curr.total_words) * 100)
-                }), {});
-                setReadingProgress(progressMap);
-                return true;
-              } catch (error) {
-                if (attempt === 3) {
-                  logger.error(LogCategory.LIBRARY, 'Failed to load progress', error);
-                  return false; // Don't throw, just continue without progress
-                }
-                await new Promise(r => setTimeout(r, 1000 * attempt));
-              }
-            }
-          })()
-        ]);
-
-        // Handle results
-        if (filesResult.status === 'rejected') {
-          throw new Error('Failed to load library files');
-        }
-
-        // Progress failure doesn't block the library
-        if (progressResult.status === 'rejected') {
-          logger.warn(LogCategory.LIBRARY, 'Failed to load reading progress, continuing without it');
-        }
-
-      } catch (error) {
-        setLoadError('Failed to load library. Please try again.');
-        logger.error(LogCategory.LIBRARY, 'Library load failed', error);
-      } finally {
-        setIsLoadingFiles(false);
-        setIsLoadingProgress(false);
-      }
-    };
-
-    loadLibraryData();
-  }, [user, loadFiles]);
 
   // Loading UI Components
   const LoadingSkeleton = () => (
@@ -590,9 +529,17 @@ export function Library() {
       <ConfirmDialog
         isOpen={showDeleteConfirm !== null}
         onClose={() => setShowDeleteConfirm(null)}
-        onConfirm={() => showDeleteConfirm !== null && confirmDelete(showDeleteConfirm)}
+        onConfirm={() => showDeleteConfirm && confirmDelete(showDeleteConfirm)}
         title="Delete File"
         message="Are you sure you want to delete this file? This action cannot be undone."
+      />
+
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={confirmBulkDelete}
+        title="Delete Multiple Files"
+        message={`Are you sure you want to delete ${selectedFiles.size} files? This action cannot be undone.`}
       />
     </PageBackground>
   );

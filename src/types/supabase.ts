@@ -1,6 +1,22 @@
 export interface Database {
   public: {
     Tables: {
+      book_metadata: {
+        Row: {
+          id: string;
+          user_id: string;
+          file_path: string;
+          title: string;
+          word_count: number;
+          reading_time: number;
+          size: number;
+          mime_type: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Row, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Row, 'id' | 'created_at' | 'updated_at'>>;
+      };
       reading_progress: {
         Row: {
           id: number;
@@ -11,7 +27,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: Omit<Row, 'id' | 'updated_at'>;
-        Update: Partial<Insert>;
+        Update: Partial<Omit<Row, 'id' | 'updated_at'>>;
       };
       user_settings: {
         Row: {
@@ -62,3 +78,51 @@ export type CamelToSnakeCase<T> = {
       : never
     : never]: T[K];
 }; 
+
+export interface FileMetadata {
+  title: string;
+  word_count: number;
+  reading_time: number;
+  size: number;
+  mime_type: string;
+  file_path?: string;
+}
+
+export interface StoredFile {
+  id: string;
+  path: string;
+  name: string;
+  metadata: FileMetadata;
+  url?: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+}
+
+export interface FileUploadResponse {
+  success: boolean;
+  data?: StoredFile;
+  error?: string;
+} 
+
+export interface BookMetadata {
+  id: string;
+  user_id: string;
+  file_path: string;
+  title: string;
+  word_count: number;
+  reading_time: number;
+  size: number;
+  mime_type: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LibraryFile {
+  id: string;
+  name: string;
+  content: string;
+  timestamp: string;
+  metadata: BookMetadata;
+  url?: string;
+} 

@@ -1,79 +1,91 @@
-import { PDFLightExtractor } from './lightExtractor';
-import { PDFHeavyExtractor } from './heavyExtractor';
-import { ExtractionOptions, ExtractionResult } from '../types';
-import { loggerService } from '../../loggerService';
-import { convertPDFToEPUB } from './pdfToEpub';
-import { epubExtractor } from '../epub/epubExtractor';
+import * as pdfjs from 'pdfjs-dist';
+import { loggingCore, LogCategory } from '../../logging/core';
 
-export class PDFExtractorService {
-  private extractors: {
-    light: PDFLightExtractor;
-    heavy: PDFHeavyExtractor;
-  };
+export interface PdfExtractOptions {
+  mode: 'light' | 'heavy';
+  preserveFormatting?: boolean;
+  extractImages?: boolean;
+  extractMetadata?: boolean;
+  removeHeaders?: boolean;
+  removeFooters?: boolean;
+  removePageNumbers?: boolean;
+}
 
-  constructor() {
-    this.extractors = {
-      light: new PDFLightExtractor(),
-      heavy: new PDFHeavyExtractor()
-    };
-  }
+interface TextItem {
+  str: string;
+  dir: string;
+  transform: number[];
+  width: number;
+  height: number;
+  fontName: string;
+}
 
+class PdfExtractor {
   async extract(
-    file: File, 
-    options: ExtractionOptions,
+    file: File,
+    options: PdfExtractOptions,
     onProgress?: (progress: number) => void
-  ): Promise<ExtractionResult> {
-    const startTime = Date.now();
-    
+  ) {
+    const operationId = loggingCore.startOperation(LogCategory.PDF, 'extract', {
+      filename: file.name,
+      size: file.size,
+      options
+    });
+
     try {
-      loggerService.log('info', 'Starting PDF extraction', {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+
+      loggingCore.log(LogCategory.PDF, 'document_loaded', {
         filename: file.name,
-        mode: options.mode,
-        size: file.size
+        pageCount: pdf.numPages,
+        operationId
       });
 
-      let result: ExtractionResult;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item: TextItem) => item.str)
+          .join(' ');
 
-      if (options.mode === 'epub-convert') {
-        // Convert PDF to EPUB and then extract using EPUB heavy extractor
-        const epubFile = await convertPDFToEPUB(file, options, onProgress);
-        result = await epubExtractor.extract(epubFile, {
-          ...options,
-          mode: 'heavy' // Force heavy mode for converted EPUBs
-        }, onProgress);
-      } else {
-        const extractor = this.getExtractor(options.mode);
-        result = await extractor.extract(file, options, onProgress);
+        text += pageText + '\n\n';
+
+        if (onProgress) {
+          onProgress(i / pdf.numPages);
+        }
+
+        loggingCore.log(LogCategory.PDF, 'page_processed', {
+          filename: file.name,
+          page: i,
+          totalPages: pdf.numPages,
+          operationId
+        });
       }
 
-      loggerService.log('info', 'PDF extraction completed', {
+      const result = {
+        text: text.trim(),
+        metadata: await pdf.getMetadata().catch(() => ({}))
+      };
+
+      loggingCore.endOperation(LogCategory.PDF, 'extract', operationId, {
         filename: file.name,
-        mode: options.mode,
-        duration: Date.now() - startTime,
-        wordCount: result.metadata?.words
+        pageCount: pdf.numPages,
+        wordCount: result.text.split(/\s+/).length
       });
 
       return result;
     } catch (error) {
-      loggerService.log('error', 'PDF extraction failed', {
+      loggingCore.log(LogCategory.ERROR, 'pdf_extraction_failed', {
         filename: file.name,
-        mode: options.mode,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        operationId
       });
       throw error;
     }
   }
-
-  private getExtractor(mode: string) {
-    switch (mode) {
-      case 'light':
-        return this.extractors.light;
-      case 'heavy':
-        return this.extractors.heavy;
-      default:
-        throw new Error(`Unknown extraction mode: ${mode}`);
-    }
-  }
 }
 
-export const pdfExtractor = new PDFExtractorService(); 
+export const pdfExtractor = new PdfExtractor(); 

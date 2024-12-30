@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { storageService } from '../services/storageService';
-import { supabase } from '../lib/supabase';
+import { loggingCore, LogCategory } from '../services/logging/core';
+import { supabase } from '../lib/supabase/client';
 
 interface StoredFile {
   id: string;
@@ -27,81 +27,111 @@ interface LibraryState {
   updateProgress: (fileId: string, progress: number, userId: string) => Promise<void>;
 }
 
-export const useLibraryStore = create<LibraryState>((set) => ({
-  files: [],
-  lastReadFileId: null,
-  isLoading: false,
-  error: null,
+export const useLibraryStore = create<LibraryState>((set) => {
+  let loadDebounceTimer: NodeJS.Timeout | null = null;
 
-  loadFiles: async (userId: string) => {
-    if (!userId) return;
+  return {
+    files: [],
+    lastReadFileId: null,
+    isLoading: false,
+    error: null,
 
-    set({ isLoading: true, error: null });
-    try {
-      const files = await storageService.getFiles(userId);
-      set({ files, isLoading: false });
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to load files',
-        isLoading: false 
-      });
-    }
-  },
+    loadFiles: async (userId: string) => {
+      if (!userId) return;
 
-  addFile: async (file, userId) => {
-    if (!userId) return;
-
-    set({ isLoading: true, error: null });
-    try {
-      const success = await storageService.uploadFile(
-        { ...file, userId },
-        userId
-      );
-      if (success) {
-        const files = await storageService.getFiles(userId);
-        set({ files, isLoading: false });
+      // Clear any pending load
+      if (loadDebounceTimer) {
+        clearTimeout(loadDebounceTimer);
       }
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to add file',
-        isLoading: false 
-      });
-    }
-  },
 
-  removeFile: async (fileId, userId) => {
-    if (!userId) return;
+      // Debounce the load operation
+      loadDebounceTimer = setTimeout(async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const files = await supabase.listLibraryFiles(userId);
+          set({ files, isLoading: false });
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to load files',
+            isLoading: false 
+          });
+        }
+      }, 100); // 100ms debounce
+    },
 
-    set({ isLoading: true, error: null });
-    try {
-      const success = await storageService.deleteFile(fileId, userId);
-      if (success) {
-        const files = await storageService.getFiles(userId);
-        set({ files, isLoading: false });
+    addFile: async (file, userId) => {
+      try {
+        loggingCore.log(LogCategory.FILE, 'library_add_started', {
+          filename: file.name,
+          userId
+        });
+
+        if (!userId) return;
+
+        set({ isLoading: true, error: null });
+        try {
+          const success = await storageService.uploadFile(
+            { ...file, userId },
+            userId
+          );
+          if (success) {
+            const files = await storageService.getFiles(userId);
+            set({ files, isLoading: false });
+          }
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to add file',
+            isLoading: false 
+          });
+        }
+
+        loggingCore.log(LogCategory.FILE, 'library_add_completed', {
+          filename: file.name,
+          userId
+        });
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'library_add_failed', {
+          filename: file.name,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        throw error;
       }
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to remove file',
-        isLoading: false 
-      });
+    },
+
+    removeFile: async (fileId, userId) => {
+      if (!userId) return;
+
+      set({ isLoading: true, error: null });
+      try {
+        const success = await storageService.deleteFile(fileId, userId);
+        if (success) {
+          const files = await storageService.getFiles(userId);
+          set({ files, isLoading: false });
+        }
+      } catch (error) {
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to remove file',
+          isLoading: false 
+        });
+      }
+    },
+
+    setLastReadFile: (fileId) => {
+      set({ lastReadFileId: fileId });
+    },
+
+    updateProgress: async (fileId, progress, userId) => {
+      if (!userId) return;
+
+      try {
+        await storageService.updateFileProgress(fileId, userId, progress);
+        const files = await storageService.getFiles(userId);
+        set({ files });
+      } catch (error) {
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to update progress'
+        });
+      }
     }
-  },
-
-  setLastReadFile: (fileId) => {
-    set({ lastReadFileId: fileId });
-  },
-
-  updateProgress: async (fileId, progress, userId) => {
-    if (!userId) return;
-
-    try {
-      await storageService.updateFileProgress(fileId, userId, progress);
-      const files = await storageService.getFiles(userId);
-      set({ files });
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to update progress'
-      });
-    }
-  }
-})); 
+  };
+}); 

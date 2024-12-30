@@ -6,15 +6,13 @@ import { LibrarySidebar } from '../components/reader/LibrarySidebar';
 import { SettingsPanel } from '../components/reader/SettingsPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
-import { logger, LogCategory } from '../utils/logger';
 import { progressService } from '../services/database/progress';
 import { loggingCore } from '../services/logging/core';
 import { LogLevel } from '../services/logging/types';
+import { LogCategory } from '../services/logging/core';
 import { loggingConfig, LoggingMode } from '../services/logging/config';
 import { settingsService } from '../services/database/settings';
-import { DEFAULT_SETTINGS } from '../types/settings';
 
 // Set logging mode once at the top level
 loggingConfig.setMode(
@@ -37,7 +35,6 @@ export function Reader() {
   const location = useLocation();
   const navigate = useNavigate();
   const { fileId, fileName, content } = location.state || {};
-  const updateProgress = useLibraryStore(state => state.updateProgress);
   
   // Settings from store
   const { 
@@ -48,45 +45,55 @@ export function Reader() {
 
   // Load settings on mount
   useEffect(() => {
-    const initializeSettings = async () => {
+    const loadReaderSettings = async () => {
       if (!user?.id) return;
       
+      const operationId = crypto.randomUUID();
+      
       try {
+        // Initialize settings if needed
+        await settingsService.initializeUserSettings(user.id);
+        
+        // Load settings
         await loadSettings(user.id);
-        loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_reader', {
-          userId: user.id
+        
+        loggingCore.log(LogCategory.SETTINGS, 'reader_settings_loaded', {
+          userId: user.id,
+          operationId,
+          settings
         });
       } catch (error) {
-        loggingCore.log(LogCategory.ERROR, 'settings_load_failed_reader', {
-          error,
-          userId: user.id
+        loggingCore.log(LogCategory.ERROR, 'reader_settings_load_failed', {
+          userId: user.id,
+          operationId,
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     };
 
-    initializeSettings();
+    loadReaderSettings();
+  }, [user?.id, loadSettings]);
 
-    // Cleanup function
-    return () => {
-      if (user?.id) {
-        settingsService.clearCache(user.id);
+  // Initialize progress when file is loaded
+  useEffect(() => {
+    const initializeReaderProgress = async () => {
+      if (!user?.id || !fileId || !content) return;
+      
+      try {
+        await progressService.initializeProgress(user.id, fileId, content.split(/\s+/).length);
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'progress_initialization_failed', {
+          userId: user.id,
+          fileId,
+          error
+        });
       }
     };
-  }, [user?.id]);
 
-  // Use settings from store with fallback
-  const readerSettings = settings || DEFAULT_SETTINGS;
+    initializeReaderProgress();
+  }, [user?.id, fileId, content]);
 
-  const [wordsPerMinute, setWordsPerMinute] = useState(300);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const words = content?.split(/\s+/) || [];
-
-  const hasInitialized = useRef(false);
-
-  // Split into two effects - one for progress initialization, one for settings
+  // Initialize progress and load saved progress
   useEffect(() => {
     if (hasInitialized.current) return;
     
@@ -112,12 +119,21 @@ export function Reader() {
           error,
           userId: user.id,
           fileId
-        }, { level: LogLevel.ERROR });
+        }, { level: LogLevel.ERROR, category: LogCategory.ERROR });
       }
     };
 
     initializeReaderProgress();
   }, [user?.id, fileId, content]);
+
+  const [wordsPerMinute, setWordsPerMinute] = useState(300);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const words = content?.split(/\s+/) || [];
+
+  const hasInitialized = useRef(false);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
@@ -178,22 +194,22 @@ export function Reader() {
   }, [currentWordIndex, user?.id, fileId, words.length]);
 
   return (
-    <div className={`min-h-screen flex flex-col ${readerSettings.darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      {!readerSettings.hideHeader && (
+    <div className={`min-h-screen flex flex-col ${settings?.darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {!settings?.hideHeader && (
         <ReaderHeader 
           title={fileName || 'Unknown Book'}
           chapter={`${currentWordIndex + 1} of ${words.length} words`}
-          darkMode={readerSettings.darkMode}
+          darkMode={settings?.darkMode}
           onBackToLibrary={handleBackToLibrary}
         />
       )}
       
-      <div className={`flex flex-1 ${readerSettings.hideHeader ? '' : 'mt-16'} mb-16`}>
+      <div className={`flex flex-1 ${settings?.hideHeader ? '' : 'mt-16'} mb-16`}>
         <LibrarySidebar 
           isOpen={isLibraryOpen}
           onClose={() => setIsLibraryOpen(false)}
-          darkMode={readerSettings.darkMode}
-          hideHeader={readerSettings.hideHeader}
+          darkMode={settings?.darkMode}
+          hideHeader={settings?.hideHeader}
         />
 
         <main className="flex-1 flex items-center justify-center">
@@ -205,17 +221,17 @@ export function Reader() {
             fileId={fileId}
             wordsPerMinute={wordsPerMinute}
             isPlaying={isPlaying}
-            settings={readerSettings}
+            settings={settings}
             onWordChange={handleWordChange}
           />
         </main>
 
         <SettingsPanel
           isOpen={isSettingsOpen}
-          settings={readerSettings}
+          settings={settings}
           onClose={() => setIsSettingsOpen(false)}
           onUpdateSettings={handleUpdateSettings}
-          hideHeader={readerSettings.hideHeader}
+          hideHeader={settings?.hideHeader}
         />
       </div>
 
@@ -223,7 +239,7 @@ export function Reader() {
         progress={(currentWordIndex / words.length) * 100}
         wordsPerMinute={wordsPerMinute}
         isPlaying={isPlaying}
-        darkMode={readerSettings.darkMode}
+        darkMode={settings?.darkMode}
         onSpeedChange={handleSpeedChange}
         onTogglePlay={handleTogglePlay}
         onSkipForward={() => setCurrentWordIndex(prev => Math.min(prev + 10, words.length - 1))}

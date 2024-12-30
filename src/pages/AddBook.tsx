@@ -4,16 +4,17 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { Button } from '../components/ui/Button';
 import { BookOpen, Upload, FileText } from 'lucide-react';
 import { Card } from '../components/ui/Card';
-import { loggerService } from '../services/loggerService';
 import { Banner } from '../components/ui/Banner';
 import { PageBackground } from '../components/ui/PageBackground';
 import { pdfExtractor } from '../services/extractors/pdf/pdfExtractor';
 import { epubExtractor } from '../services/extractors/epub/epubExtractor';
-import { Progress } from '../components/ui/Progress';
 import { useAuth } from '../contexts/AuthContext';
+import { loggingCore, LogCategory } from '../services/logging/core';
+import { supabase } from '../lib/supabase/client';
+import { FileMetadata } from '../types/supabase';
+import { StorageDiagnostics } from '../components/diagnostics/StorageDiagnostics';
 
 export function AddBook() {
-  const addFile = useLibraryStore(state => state.addFile);
   const { user } = useAuth();
   const [textContent, setTextContent] = useState<string>('');
   const [textTitle, setTextTitle] = useState<string>('');
@@ -41,21 +42,32 @@ export function AddBook() {
       timestamp: new Date().toISOString()
     };
 
-    await loggerService.log('info', 'File analysis completed', {
-      filename,
-      ...analysis
-    });
-    
-    await addFile({
-      id: Date.now().toString(),
-      name: filename,
-      content: normalizedContent,
-      timestamp: Date.now(),
-    }, user.id);
+    // Create file metadata
+    const metadata: FileMetadata = {
+      title: filename,
+      word_count: analysis.wordCount,
+      reading_time: Math.ceil(analysis.wordCount / 200), // 200 WPM average
+      size: new Blob([normalizedContent]).size,
+      mime_type: 'text/plain'
+    };
 
-    await loggerService.log('info', 'File added to library', {
-      fileName: filename,
-      fileId: Date.now().toString(),
+    const file = new File(
+      [new Blob([normalizedContent], { type: 'text/plain' })],
+      filename,
+      { type: 'text/plain', lastModified: Date.now() }
+    );
+
+    // Upload using centralized client
+    const response = await supabase.uploadFile(file, metadata, user.id);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.error || 'Upload failed');
+    }
+
+    loggingCore.log(LogCategory.FILE, 'file_upload_completed', {
+      fileId: response.data.id,
+      filename,
+      metadata,
       analysis
     });
 
@@ -73,7 +85,7 @@ export function AddBook() {
     setUploadProgress(0);
 
     try {
-      await loggerService.log('info', 'File upload started', {
+      loggingCore.log(LogCategory.FILE, 'file_upload_started', {
         filename: file.name,
         type: file.type,
         size: file.size
@@ -84,7 +96,11 @@ export function AddBook() {
 
       switch (fileType) {
         case 'pdf': {
-          await loggerService.log('info', 'Starting PDF extraction', { filename: file.name });
+          loggingCore.log(LogCategory.PDF, 'pdf_extraction_started', { 
+            filename: file.name,
+            size: file.size 
+          });
+
           const result = await pdfExtractor.extract(file, {
             mode: 'heavy',
             preserveFormatting: true,
@@ -96,11 +112,21 @@ export function AddBook() {
           }, (progress) => {
             setUploadProgress(Math.round(progress * 100));
           });
+
+          loggingCore.log(LogCategory.PDF, 'pdf_extraction_completed', {
+            filename: file.name,
+            wordCount: result.text.split(/\s+/).length,
+            duration: Date.now() - performance.now()
+          });
+
           text = result.text;
           break;
         }
         case 'epub': {
-          await loggerService.log('info', 'Starting EPUB extraction', { filename: file.name });
+          loggingCore.log(LogCategory.FILE, 'epub_extraction_started', { 
+            filename: file.name 
+          });
+
           const result = await epubExtractor.extract(file, {
             mode: 'heavy',
             preserveFormatting: true,
@@ -112,21 +138,32 @@ export function AddBook() {
           }, (progress) => {
             setUploadProgress(Math.round(progress * 100));
           });
+
+          loggingCore.log(LogCategory.FILE, 'epub_extraction_completed', {
+            filename: file.name,
+            wordCount: result.text.split(/\s+/).length
+          });
+
           text = result.text;
           break;
         }
         case 'txt': {
-          setUploadProgress(30);
-          await loggerService.log('info', 'Starting TXT processing', { filename: file.name });
-          const reader = new FileReader();
+          loggingCore.log(LogCategory.FILE, 'txt_processing_started', { 
+            filename: file.name 
+          });
+
           text = await new Promise((resolve, reject) => {
-            reader.onload = (e) => {
-              setUploadProgress(100);
-              resolve(e.target?.result as string);
-            };
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
             reader.onerror = reject;
             reader.readAsText(file);
           });
+
+          loggingCore.log(LogCategory.FILE, 'txt_processing_completed', {
+            filename: file.name,
+            contentLength: text.length
+          });
+
           break;
         }
         default:
@@ -134,27 +171,19 @@ export function AddBook() {
       }
 
       await handleFileAdded(text, file.name);
-      
-      await loggerService.log('info', 'File processing completed', {
-        filename: file.name,
-        contentLength: text.length,
-        wordCount: text.split(/\s+/).length
-      });
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'An error occurred while processing the file';
-      setErrorMessage(errorMsg);
+      const message = error instanceof Error ? error.message : 'An error occurred';
+      setErrorMessage(message);
       
-      await loggerService.log('error', 'File processing failed', {
+      loggingCore.log(LogCategory.ERROR, 'file_processing_failed', {
         filename: file.name,
-        error: errorMsg,
+        error: message,
         stack: error instanceof Error ? error.stack : undefined
       });
-      
-      console.error('Error processing file:', error);
     } finally {
       setIsProcessing(false);
-      setTimeout(() => setUploadProgress(0), 1000);
+      setUploadProgress(0);
     }
   };
 
@@ -319,6 +348,8 @@ export function AddBook() {
               <li>• Your content is private and secure</li>
             </ul>
           </div>
+
+          <StorageDiagnostics />
         </div>
       </main>
     </PageBackground>

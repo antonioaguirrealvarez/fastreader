@@ -7,6 +7,7 @@ class SettingsService {
   private updateTimer: NodeJS.Timeout | null = null;
   private pendingSettings: Map<string, Partial<SettingsData>> = new Map();
   private readonly SETTINGS_UPDATE_DELAY = 10000;
+  private initializationPromises: Map<string, Promise<void>> = new Map();
 
   private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id'> = {
     dark_mode: true,
@@ -99,32 +100,46 @@ class SettingsService {
   }
 
   async initializeUserSettings(userId: string): Promise<void> {
-    try {
-      const existingSettings = await this.getSettings(userId);
-      
-      // Only create if no settings exist
-      if (!existingSettings) {
-        const defaultSettings = {
-          ...this.DEFAULT_SETTINGS,
-          user_id: userId
-        };
-
-        const result = await supabase.upsertSettings(defaultSettings);
-        
-        if (result) {
-          this.cache.set(userId, result);
-          loggingCore.log(LogCategory.SETTINGS, 'settings_initialized', {
-            userId,
-            settings: result
-          });
-        }
-      }
-    } catch (error) {
-      loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
-        error,
-        userId
-      });
+    // Return existing initialization promise if one exists
+    if (this.initializationPromises.has(userId)) {
+      return this.initializationPromises.get(userId)!;
     }
+
+    const initPromise = (async () => {
+      try {
+        const existingSettings = await this.getSettings(userId);
+        
+        // Only create if no settings exist
+        if (!existingSettings) {
+          const defaultSettings = {
+            ...this.DEFAULT_SETTINGS,
+            user_id: userId
+          };
+
+          const result = await supabase.upsertSettings(defaultSettings);
+          
+          if (result) {
+            this.cache.set(userId, result);
+            loggingCore.log(LogCategory.SETTINGS, 'settings_initialized', {
+              userId,
+              settings: result
+            });
+          }
+        }
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
+          error,
+          userId
+        });
+      } finally {
+        // Clean up the promise reference
+        this.initializationPromises.delete(userId);
+      }
+    })();
+
+    // Store the promise
+    this.initializationPromises.set(userId, initPromise);
+    return initPromise;
   }
 
   async getSettings(userId: string): Promise<SettingsData | null> {

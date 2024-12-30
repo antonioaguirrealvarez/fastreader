@@ -1,8 +1,9 @@
 import React from 'react';
 
-interface BannerProps {
+export interface BannerProps {
   variant: 'success' | 'error' | 'warning' | 'info';
   title: string;
+  description?: string;
   className?: string;
   onClose?: () => void;
 }

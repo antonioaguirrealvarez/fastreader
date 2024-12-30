@@ -5,6 +5,8 @@ import { loggingCore, LogCategory } from '../logging/core';
 class ProgressService {
   private readonly BATCH_SIZE = 100;
   private lastSavedProgress: Map<string, number> = new Map();
+  private progressCache: Map<string, any> = new Map();
+  private loadPromise: Promise<any> | null = null;
 
   private getProgressKey(userId: string, fileId: string): string {
     return `${userId}:${fileId}`;
@@ -79,24 +81,101 @@ class ProgressService {
     }
   }
 
-  async getAllProgress(userId: string): Promise<ProgressData[]> {
-    try {
-      const data = await supabase.getAllProgress(userId);
+  async getAllProgress(userId: string) {
+    // Return cached data if available
+    if (this.progressCache.has(userId)) {
+      return this.progressCache.get(userId);
+    }
+
+    // If already loading, return the existing promise
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+
+    // Load progress
+    this.loadPromise = (async () => {
+      const operationId = crypto.randomUUID();
       
-      if (data) {
+      try {
+        const { data, error } = await supabase.client
+          .from('reading_progress')
+          .select('*')
+          .eq('user_id', userId);
+
+        if (error) throw error;
+
         loggingCore.log(LogCategory.PROGRESS, 'progress_fetch_all_complete', {
           count: data.length,
-          userId
+          userId,
+          operationId,
+          progress: data.map(p => ({
+            fileId: p.file_id,
+            progress: Math.round((p.current_word / p.total_words) * 100)
+          }))
         });
+
+        this.progressCache.set(userId, data);
+        return data;
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'progress_fetch_failed', {
+          userId,
+          operationId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        throw error;
+      } finally {
+        this.loadPromise = null;
       }
+    })();
+
+    return this.loadPromise;
+  }
+
+  clearCache(userId: string) {
+    this.progressCache.delete(userId);
+  }
+
+  async initializeProgress(userId: string, fileId: string, totalWords: number): Promise<void> {
+    try {
+      const operationId = crypto.randomUUID();
       
-      return data || [];
-    } catch (error) {
-      loggingCore.log(LogCategory.ERROR, 'progress_fetch_all_failed', {
-        error,
-        userId
+      // Check if progress already exists
+      const existingProgress = await this.getProgress(userId, fileId);
+      
+      if (existingProgress) {
+        loggingCore.log(LogCategory.PROGRESS, 'progress_already_initialized', {
+          userId,
+          fileId,
+          operationId,
+          existingProgress
+        });
+        return;
+      }
+
+      // Initialize progress
+      const progress: ProgressData = {
+        user_id: userId,
+        file_id: fileId,
+        current_word: 0,
+        total_words: totalWords
+      };
+
+      await supabase.upsertProgress(progress);
+
+      loggingCore.log(LogCategory.PROGRESS, 'progress_initialized', {
+        userId,
+        fileId,
+        operationId,
+        totalWords
       });
-      return [];
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'progress_initialization_failed', {
+        userId,
+        fileId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
     }
   }
 }
