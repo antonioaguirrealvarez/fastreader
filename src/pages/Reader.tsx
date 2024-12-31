@@ -162,7 +162,7 @@ export function Reader() {
   const handleWordChange = (direction: 'next' | 'prev') => {
     setCurrentWordIndex(current => {
       const newIndex = direction === 'next' 
-        ? Math.min(current + 1, content.length - 1)
+        ? Math.min(current + 1, words.length - 1)
         : Math.max(current - 1, 0);
       return newIndex;
     });
@@ -223,6 +223,7 @@ export function Reader() {
             isPlaying={isPlaying}
             settings={settings}
             onWordChange={handleWordChange}
+            onTogglePlay={handleTogglePlay}
           />
         </main>
 

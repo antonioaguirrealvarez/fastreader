@@ -3,7 +3,6 @@ import { Search, Filter, Plus, BookOpen, Clock, Star, Trash2, FileText, CheckSqu
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Header } from '../components/Header';
-import { Footer } from '../components/Footer';
 import { Banner } from '../components/ui/Banner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useAuth } from '../contexts/AuthContext';
@@ -322,9 +321,10 @@ export function Library() {
 
           {showNoBookError && (
             <Banner
-              variant="warning"
-              title="No books in your library. Add some books first!"
-              className="mb-6"
+              variant="error"
+              title="No documents in library"
+              description="Please add a document to your library first"
+              className="mb-6 animate-fade-in"
               onClose={() => setShowNoBookError(false)}
             />
           )}
@@ -361,7 +361,7 @@ export function Library() {
                 <Card className="p-4 flex items-center gap-3">
                   <BookOpen className="h-8 w-8 text-blue-600" />
                   <div>
-                    <p className="text-sm text-gray-500">Total Books</p>
+                    <p className="text-sm text-gray-500">Total Documents</p>
                     <p className="text-2xl font-semibold text-gray-900">{files.length}</p>
                   </div>
                 </Card>
@@ -432,7 +432,7 @@ export function Library() {
             </Button>
             <Button variant="primary" onClick={() => window.location.href = '/add-book'} className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
-              Add Book
+              Add Document
             </Button>
           </div>
 
@@ -524,8 +524,6 @@ export function Library() {
         </div>
       </main>
 
-      <Footer />
-
       <ConfirmDialog
         isOpen={showDeleteConfirm !== null}
         onClose={() => setShowDeleteConfirm(null)}
@@ -539,7 +537,7 @@ export function Library() {
         onClose={() => setShowBulkDeleteConfirm(false)}
         onConfirm={confirmBulkDelete}
         title="Delete Multiple Files"
-        message={`Are you sure you want to delete ${selectedFiles.size} files? This action cannot be undone.`}
+        message={`Are you sure you want to delete ${selectedFiles.size} documents? This action cannot be undone.`}
       />
     </PageBackground>
   );

@@ -12,7 +12,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { loggingCore, LogCategory } from '../services/logging/core';
 import { supabase } from '../lib/supabase/client';
 import { FileMetadata } from '../types/supabase';
-import { StorageDiagnostics } from '../components/diagnostics/StorageDiagnostics';
+import { Toggle } from '../components/ui/Toggle';
+import { storageService } from '../services/storageService';
 
 export function AddBook() {
   const { user } = useAuth();
@@ -22,6 +23,7 @@ export function AddBook() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [useAI, setUseAI] = useState(false);
 
   const handleFileAdded = async (content: string, filename: string) => {
     if (!user) {
@@ -250,55 +252,67 @@ export function AddBook() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* File Upload Card */}
             <Card className="p-6 bg-white/80 backdrop-blur-sm shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                  <Upload className="h-5 w-5 text-blue-500" />
+              <div className="space-y-6">
+                {/* AI Toggle */}
+                <div className="border-b pb-4">
+                  <Toggle
+                    defaultEnabled={useAI}
+                    onChange={setUseAI}
+                  />
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Upload File</h2>
-                  <p className="text-sm text-gray-500">Drag and drop or click to upload</p>
-                </div>
-              </div>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 transition-colors hover:border-gray-300 h-[calc(100%-88px)] flex flex-col">
-                <input
-                  type="file"
-                  accept=".txt,.pdf,.epub"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                  disabled={isProcessing}
-                />
-                <label
-                  htmlFor="file-upload"
-                  className={`flex-1 flex flex-col items-center cursor-pointer justify-center ${
-                    isProcessing ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  <Upload className="h-12 w-12 text-gray-400 mb-3" />
-                  <span className="text-sm font-medium text-gray-700">
-                    {isProcessing ? 'Processing...' : 'Click to upload'}
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
-                  <span className="text-xs text-gray-400 mt-2">
-                    Supported formats: .txt, .pdf, .epub
-                  </span>
-                </label>
 
-                {/* Progress Bar */}
-                {(isProcessing || uploadProgress > 0) && (
-                  <div className="mt-4 w-full">
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                        style={{ width: `${uploadProgress}%` }}
-                      />
-                    </div>
-                    <div className="mt-2 flex justify-between text-xs text-gray-500">
-                      <span>{uploadProgress}% complete</span>
-                      <span>{isProcessing ? 'Processing...' : 'Ready'}</span>
-                    </div>
+                {/* Existing Upload UI */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                    <Upload className="h-5 w-5 text-blue-500" />
                   </div>
-                )}
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">Upload File</h2>
+                    <p className="text-sm text-gray-500">Drag and drop or click to upload</p>
+                  </div>
+                </div>
+                
+                <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 transition-colors hover:border-gray-300 h-[calc(100%-88px)] flex flex-col">
+                  <input
+                    type="file"
+                    accept=".txt,.pdf,.epub"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="file-upload"
+                    disabled={isProcessing}
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className={`flex-1 flex flex-col items-center cursor-pointer justify-center ${
+                      isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    <Upload className="h-12 w-12 text-gray-400 mb-3" />
+                    <span className="text-sm font-medium text-gray-700">
+                      {isProcessing ? 'Processing...' : 'Click to upload'}
+                    </span>
+                    <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
+                    <span className="text-xs text-gray-400 mt-2">
+                      Supported formats: .txt, .pdf, .epub
+                    </span>
+                  </label>
+
+                  {/* Progress Bar */}
+                  {(isProcessing || uploadProgress > 0) && (
+                    <div className="mt-4 w-full">
+                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 flex justify-between text-xs text-gray-500">
+                        <span>{uploadProgress}% complete</span>
+                        <span>{isProcessing ? 'Processing...' : 'Ready'}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </Card>
 
@@ -348,8 +362,6 @@ export function AddBook() {
               <li>• Your content is private and secure</li>
             </ul>
           </div>
-
-          <StorageDiagnostics />
         </div>
       </main>
     </PageBackground>

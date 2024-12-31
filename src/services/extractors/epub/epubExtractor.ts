@@ -1,77 +1,69 @@
-import { Book } from 'epubjs';
 import { loggingCore, LogCategory } from '../../logging/core';
+import { ProcessingOptions } from '../../documentProcessing/types';
+import * as EPub from 'epubjs';
 
-export interface EpubExtractOptions {
-  mode: 'light' | 'heavy';
-  preserveFormatting?: boolean;
-  extractImages?: boolean;
-  extractMetadata?: boolean;
-  removeHeaders?: boolean;
-  removeFooters?: boolean;
-  removePageNumbers?: boolean;
-}
-
-class EpubExtractor {
+export class EpubExtractor {
   async extract(
     file: File,
-    options: EpubExtractOptions,
+    options: ProcessingOptions = {},
     onProgress?: (progress: number) => void
   ) {
-    const operationId = loggingCore.startOperation(LogCategory.FILE, 'epub_extract', {
-      filename: file.name,
-      size: file.size,
-      options
-    });
+    const operationId = crypto.randomUUID();
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const book = new Book(arrayBuffer);
+      loggingCore.startOperation(LogCategory.EPUB_PROCESSING, 'extract', {
+        filename: file.name,
+        size: file.size,
+        options
+      }, { operationId });
+
+      const book = EPub(await file.arrayBuffer());
       await book.ready;
 
-      loggingCore.log(LogCategory.FILE, 'epub_loaded', {
+      loggingCore.log(LogCategory.EPUB_PROCESSING, 'document_loaded', {
         filename: file.name,
         chapterCount: book.spine.length,
         operationId
       });
 
-      let text = '';
-      let processedChapters = 0;
+      const chapters = await Promise.all(
+        book.spine.map(async (chapter, index) => {
+          const content = await chapter.load();
+          
+          loggingCore.log(LogCategory.EPUB_PROCESSING, 'chapter_processed', {
+            filename: file.name,
+            chapter: index + 1,
+            totalChapters: book.spine.length,
+            operationId
+          });
 
-      for (const chapter of book.spine) {
-        const content = await chapter.load();
-        const chapterText = content.textContent || '';
-        text += chapterText + '\n\n';
+          if (onProgress) {
+            onProgress((index + 1) / book.spine.length);
+          }
 
-        processedChapters++;
-        if (onProgress) {
-          onProgress(processedChapters / book.spine.length);
-        }
+          return content;
+        })
+      );
 
-        loggingCore.log(LogCategory.FILE, 'epub_chapter_processed', {
-          filename: file.name,
-          chapter: processedChapters,
-          totalChapters: book.spine.length,
-          operationId
-        });
-      }
+      const finalText = chapters.join('\n\n');
+      const wordCount = finalText.split(/\s+/).length;
 
-      const result = {
-        text: text.trim(),
-        metadata: book.metadata
-      };
-
-      loggingCore.endOperation(LogCategory.FILE, 'epub_extract', operationId, {
+      loggingCore.endOperation(LogCategory.EPUB_PROCESSING, 'extract', operationId, {
         filename: file.name,
         chapterCount: book.spine.length,
-        wordCount: result.text.split(/\s+/).length
+        wordCount,
+        duration: performance.now()
       });
 
-      return result;
+      return {
+        text: finalText,
+        pageCount: book.spine.length
+      };
+
     } catch (error) {
       loggingCore.log(LogCategory.ERROR, 'epub_extraction_failed', {
         filename: file.name,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
+        error,
         operationId
       });
       throw error;

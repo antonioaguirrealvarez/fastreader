@@ -33,13 +33,14 @@ function HomePage() {
         <main className="flex-1">
           <DynamicHero />
           <DemoReader />
-          <Features />
-          <CustomerLogos />
-          <TestimonialCarousel />
-          <ScienceSection />
-          <PricingSection />
+          {/* Commented out sections for future use */}
+          {/* <Features /> */}
+          {/* <CustomerLogos /> */}
+          {/* <TestimonialCarousel /> */}
+          {/* <ScienceSection /> */}
+          {/* <PricingSection /> */}
         </main>
-        <Footer />
+        {/* <Footer /> */}
       </div>
     </PageBackground>
   );

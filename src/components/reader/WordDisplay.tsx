@@ -18,8 +18,10 @@ interface WordDisplayProps {
     displayMode: 'highlight' | 'spritz';
     fontSize: string;
     peripheralMode: boolean;
+    pauseOnPunctuation: boolean;
   };
   onWordChange: (direction: 'next' | 'prev') => void;
+  onTogglePlay: () => void;
 }
 
 export function WordDisplay({ 
@@ -31,12 +33,19 @@ export function WordDisplay({
   wordsPerMinute,
   isPlaying,
   settings,
-  onWordChange 
+  onWordChange,
+  onTogglePlay 
 }: WordDisplayProps) {
   // Keep session tracking
   const sessionStarted = useRef(false);
   const sessionId = useRef<string>(crypto.randomUUID());
   const lastPerformanceLog = useRef<number>(Date.now());
+  const progressionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pauseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInPauseState = useRef(false);
+
+  // Add refs for managing pause state
+  const lastWordRef = useRef<string>(word);
 
   // Session logging
   useEffect(() => {
@@ -67,13 +76,93 @@ export function WordDisplay({
     }
   }, [userId, fileId]);
 
-  // Keep performance metrics
+  // Handle word progression
+  useEffect(() => {
+    if (!isPlaying) {
+      // Clear any existing intervals/timeouts when paused
+      if (progressionIntervalRef.current) {
+        clearInterval(progressionIntervalRef.current);
+        progressionIntervalRef.current = null;
+      }
+      if (pauseTimeoutRef.current) {
+        clearTimeout(pauseTimeoutRef.current);
+        pauseTimeoutRef.current = null;
+      }
+      isInPauseState.current = false;
+      return;
+    }
+
+    const wordInterval = (60 * 1000) / wordsPerMinute;
+
+    const progressWord = () => {
+      // Don't progress if we're in a pause state
+      if (isInPauseState.current) return;
+
+      // Only log on significant events, not every word
+      // if (settings.pauseOnPunctuation && /[.!?;,]$/.test(word)) {
+      //   loggingCore.log(LogCategory.READING_STATE, 'word_progression', {
+      //     currentWord: word,
+      //     hasPunctuation: true,
+      //     pauseEnabled: settings.pauseOnPunctuation,
+      //     wordInterval,
+      //     wordIndex,
+      //     isInPauseState: isInPauseState.current
+      //   });
+      // }
+
+      if (settings.pauseOnPunctuation && /[.!?;,]$/.test(word)) {
+        // Clear existing intervals
+        if (progressionIntervalRef.current) {
+          clearInterval(progressionIntervalRef.current);
+          progressionIntervalRef.current = null;
+        }
+
+        // Set pause state
+        isInPauseState.current = true;
+
+        // Schedule resume
+        pauseTimeoutRef.current = setTimeout(() => {
+          // Clear pause state
+          isInPauseState.current = false;
+          
+          // Progress to next word
+          onWordChange('next');
+          
+          // Start new progression interval
+          startProgression();
+        }, wordInterval * 1.5);
+      } else {
+        onWordChange('next');
+      }
+    };
+
+    const startProgression = () => {
+      // Clear any existing interval
+      if (progressionIntervalRef.current) {
+        clearInterval(progressionIntervalRef.current);
+      }
+      progressionIntervalRef.current = setInterval(progressWord, wordInterval);
+    };
+
+    // Only start progression if we're not in a pause state
+    if (!isInPauseState.current) {
+      startProgression();
+    }
+
+    // Cleanup
+    return () => {
+      if (progressionIntervalRef.current) {
+        clearInterval(progressionIntervalRef.current);
+      }
+      if (pauseTimeoutRef.current) {
+        clearTimeout(pauseTimeoutRef.current);
+      }
+    };
+  }, [isPlaying, word, wordIndex, wordsPerMinute, settings.pauseOnPunctuation]);
+
+  // Keep the performance logging separate
   useEffect(() => {
     if (!isPlaying) return;
-
-    const interval = setInterval(() => {
-      handleWordChange('next');
-    }, (60 * 1000) / wordsPerMinute);
 
     const performanceInterval = setInterval(() => {
       const currentTime = Date.now();
@@ -84,20 +173,8 @@ export function WordDisplay({
       lastPerformanceLog.current = currentTime;
     }, PERFORMANCE_LOG_INTERVAL);
 
-    return () => {
-      clearInterval(interval);
-      clearInterval(performanceInterval);
-    };
+    return () => clearInterval(performanceInterval);
   }, [isPlaying, wordsPerMinute]);
-
-  // Handle word changes and progress saving
-  const handleWordChange = (direction: 'next' | 'prev') => {
-    const newIndex = direction === 'next' 
-      ? Math.min(wordIndex + 1, totalWords - 1)
-      : Math.max(wordIndex - 1, 0);
-
-    onWordChange(direction);
-  };
 
   // Remove console.log for font size
   const getFontSize = () => {
@@ -342,6 +419,11 @@ export function WordDisplay({
       }, { level: LogLevel.ERROR });
       return '...';
     }
+  };
+
+  // Add this function to check for punctuation
+  const hasPunctuation = (word: string): boolean => {
+    return /[.!?;,]$/.test(word);
   };
 
   return (
