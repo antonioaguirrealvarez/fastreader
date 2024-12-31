@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { DynamicHero } from './components/DynamicHero';
 import { DemoReader } from './components/DemoReader';
 import { Features } from './components/Features';
@@ -24,6 +24,7 @@ import { authService } from './services/auth/authService';
 import { supabase } from './services/supabase/config';
 import { FileConversionTest } from './test/FileConversionTest';
 import { SupabaseTableTest } from './test/SupabaseTableTest';
+import { GroqTest } from './test/GroqTest';
 
 function HomePage() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
             <Route path="/test/file-conversion" element={<FileConversionTest />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/supabase-test" element={<SupabaseTableTest />} />
+            <Route path="/test/groq" element={process.env.NODE_ENV === 'development' ? <GroqTest /> : <Navigate to="/" />} />
           </Routes>
         </AuthProvider>
       </Router>

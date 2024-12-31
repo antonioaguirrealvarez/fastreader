@@ -19,6 +19,7 @@
     "epubjs": "0.3.93",
     "express": "^4.21.1",
     "framer-motion": "^10.16.5",
+    "groq-sdk": "^0.9.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.344.0",
     "pdfjs-dist": "3.11.174",

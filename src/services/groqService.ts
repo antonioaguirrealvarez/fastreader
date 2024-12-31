@@ -1,4 +1,4 @@
-import { logger, LogCategory } from '../utils/logger';
+import { loggingCore, LogCategory } from './logging/core';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -6,83 +6,90 @@ interface ChatMessage {
 }
 
 export class GroqService {
-  private readonly MODEL = 'llama-3.3-70b-versatile';
-  private readonly BATCH_SIZE = 20;
-  private readonly CHAT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly COMPLETION_API_URL = 'https://api.groq.com/v1/completions';
+  private readonly MODEL = 'llama-3.1-8b-instant';
+  private readonly API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+  private readonly API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+  private readonly MAX_CHUNK_SIZE = 8000;
+  private readonly EFFECTIVE_CHUNK_SIZE = 7000; // Leave room for prompt
+  private readonly RATE_LIMIT_DELAY = 500; // Reduced to 500ms
 
-  async processText(text: string): Promise<string> {
-    const startTime = Date.now();
+  async processLargeText(text: string, prompt: string): Promise<string> {
+    const operationId = crypto.randomUUID();
+
     try {
-      logger.info(LogCategory.GROQ_PROCESSING, 'Starting text processing', {
+      loggingCore.startOperation(LogCategory.AI_PROCESSING, 'process_large_text', {
         textLength: text.length,
-        model: this.MODEL,
-        batchSize: this.BATCH_SIZE
+        model: this.MODEL
+      }, { operationId });
+
+      // Split text into manageable chunks
+      const chunks = this.splitIntoChunks(text);
+      
+      loggingCore.log(LogCategory.AI_PROCESSING, 'text_chunked', {
+        chunkCount: chunks.length,
+        operationId
       });
 
-      // Split text into sentences
-      const sentences = this.splitIntoSentences(text);
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Text split into sentences', {
-        totalSentences: sentences.length
-      });
+      // Process chunks with rate limiting
+      const processedChunks: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        loggingCore.log(LogCategory.AI_PROCESSING, 'processing_chunk', {
+          chunkNumber: i + 1,
+          totalChunks: chunks.length,
+          operationId
+        });
 
-      // Create batches
-      const batches = this.createBatches(sentences);
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Created sentence batches', {
-        totalBatches: batches.length,
-        batchSize: this.BATCH_SIZE
-      });
+        // Add delay between requests
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, this.RATE_LIMIT_DELAY));
+        }
 
-      // Process each batch
-      const processedBatches = await Promise.all(
-        batches.map(async (batch, index) => {
-          logger.debug(LogCategory.GROQ_PROCESSING, `Processing batch ${index + 1}/${batches.length}`, {
-            batchSize: batch.length
-          });
+        const messages: ChatMessage[] = [{
+          role: 'user',
+          content: `${prompt}\n\n${chunks[i]}`
+        }];
 
-          const result = await this.processBatch(batch);
-          
-          logger.debug(LogCategory.GROQ_PROCESSING, `Completed batch ${index + 1}`, {
-            inputSize: batch.join(' ').length,
-            outputSize: result.length
-          });
-
-          return result;
-        })
-      );
+        const processed = await this.chat(messages);
+        processedChunks.push(processed);
+      }
 
       // Combine results
-      const finalText = processedBatches.join(' ');
-      logger.info(LogCategory.GROQ_PROCESSING, 'Text processing completed', {
+      const finalText = processedChunks.join('\n\n');
+
+      loggingCore.endOperation(LogCategory.AI_PROCESSING, 'process_large_text', operationId, {
         originalLength: text.length,
         finalLength: finalText.length,
-        totalBatches: batches.length,
-        processingTime: Date.now() - startTime
+        chunksProcessed: chunks.length
       });
 
       return finalText;
+
     } catch (error) {
-      logger.error(LogCategory.GROQ_PROCESSING, 'Error processing text with Groq', error, {
-        textLength: text.length,
-        model: this.MODEL,
-        processingTime: Date.now() - startTime
+      loggingCore.log(LogCategory.ERROR, 'large_text_processing_failed', {
+        error,
+        operationId
       });
-      throw this.formatError(error);
+      throw error;
     }
   }
 
   async chat(messages: ChatMessage[]): Promise<string> {
-    const startTime = Date.now();
+    const operationId = crypto.randomUUID();
+
     try {
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Starting chat request', {
+      loggingCore.startOperation(LogCategory.AI_PROCESSING, 'groq_chat', {
         messageCount: messages.length,
         model: this.MODEL
-      });
+      }, { operationId });
 
-      const response = await fetch(this.CHAT_API_URL, {
+      if (!this.API_KEY) {
+        throw new Error('Groq API key not configured');
+      }
+
+      const response = await fetch(this.API_URL, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
+          'Authorization': `Bearer ${this.API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -94,130 +101,87 @@ export class GroqService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(`Groq API error: ${response.status} - ${response.statusText}${
-          errorData ? '\n' + JSON.stringify(errorData, null, 2) : ''
-        }`);
+        throw new Error(`Groq API error: ${response.status}`);
       }
 
       const data = await response.json();
-      const result = data.choices[0]?.message?.content;
+      const content = data.choices[0]?.message?.content;
 
-      if (!result) {
+      if (!content) {
         throw new Error('No response content from Groq');
       }
 
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Chat request completed', {
-        inputMessages: messages.length,
-        outputLength: result.length,
-        processingTime: Date.now() - startTime,
-        tokensUsed: data.usage
+      loggingCore.endOperation(LogCategory.AI_PROCESSING, 'groq_chat', operationId, {
+        messageCount: messages.length,
+        responseLength: content.length
       });
 
-      return result;
+      return content;
+
     } catch (error) {
-      logger.error(LogCategory.GROQ_PROCESSING, 'Error in chat request', error, {
-        messageCount: messages.length,
-        model: this.MODEL,
-        processingTime: Date.now() - startTime
+      loggingCore.log(LogCategory.ERROR, 'groq_chat_failed', {
+        error,
+        operationId
       });
-      throw this.formatError(error);
+      throw error;
     }
   }
 
-  // Alias methods for backward compatibility
-  async cleanText(text: string): Promise<string> {
-    return this.processTextWithChat(text, 'Clean this text by removing any formatting artifacts, fixing spacing issues, and correcting any obvious errors. Keep the meaning intact.');
-  }
+  private splitIntoChunks(text: string): string[] {
+    const chunks: string[] = [];
+    let currentChunk = '';
+    
+    // Split by paragraphs first
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
 
-  async removeMetadata(text: string): Promise<string> {
-    return this.processTextWithChat(text, 'Remove any metadata, headers, footers, and formatting artifacts from this text while preserving its core content.');
-  }
+    for (const paragraph of paragraphs) {
+      // If paragraph fits in current chunk
+      if ((currentChunk + '\n\n' + paragraph).length <= this.EFFECTIVE_CHUNK_SIZE) {
+        currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+        continue;
+      }
 
-  private async processTextWithChat(text: string, instruction: string): Promise<string> {
-    return this.chat([{
-      role: 'user',
-      content: `${instruction}\n\nText:\n${text}`
-    }]);
-  }
+      // If current chunk has content, save it
+      if (currentChunk) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      }
 
-  private splitIntoSentences(text: string): string[] {
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-    logger.debug(LogCategory.GROQ_PROCESSING, 'Split text into sentences', {
-      sentenceCount: sentences.length,
-      averageLength: sentences.reduce((acc, s) => acc + s.length, 0) / sentences.length
+      // If paragraph is larger than chunk size, split it
+      if (paragraph.length > this.EFFECTIVE_CHUNK_SIZE) {
+        const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
+        let sentenceChunk = '';
+
+        for (const sentence of sentences) {
+          if ((sentenceChunk + sentence).length <= this.EFFECTIVE_CHUNK_SIZE) {
+            sentenceChunk += (sentenceChunk ? ' ' : '') + sentence;
+          } else {
+            if (sentenceChunk) chunks.push(sentenceChunk);
+            sentenceChunk = sentence;
+          }
+        }
+
+        if (sentenceChunk) {
+          currentChunk = sentenceChunk;
+        }
+      } else {
+        currentChunk = paragraph;
+      }
+    }
+
+    // Add the last chunk if it exists
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    // Log chunk information
+    loggingCore.log(LogCategory.AI_PROCESSING, 'chunk_analysis', {
+      totalChunks: chunks.length,
+      averageChunkSize: chunks.reduce((acc, chunk) => acc + chunk.length, 0) / chunks.length,
+      chunkSizes: chunks.map(chunk => chunk.length)
     });
-    return sentences;
-  }
 
-  private createBatches(sentences: string[]): string[][] {
-    const batches: string[][] = [];
-    for (let i = 0; i < sentences.length; i += this.BATCH_SIZE) {
-      batches.push(sentences.slice(i, i + this.BATCH_SIZE));
-    }
-    return batches;
-  }
-
-  private async processBatch(sentences: string[]): Promise<string> {
-    try {
-      const messages: ChatMessage[] = [{
-        role: 'user',
-        content: `Clean and improve the following text, maintaining its meaning but removing any metadata, headers, footers, or formatting artifacts:\n\n${sentences.join(' ')}`
-      }];
-
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Sending batch to Groq API', {
-        messageCount: messages.length,
-        sentenceCount: sentences.length
-      });
-
-      const response = await fetch(this.CHAT_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: this.MODEL,
-          messages,
-          temperature: 0.3,
-          max_tokens: 4000
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(`Groq API error: ${response.status} - ${response.statusText}${
-          errorData ? '\n' + JSON.stringify(errorData, null, 2) : ''
-        }`);
-      }
-
-      const data = await response.json();
-      const cleanedText = data.choices[0]?.message?.content?.trim();
-
-      if (!cleanedText) {
-        throw new Error('No response content from Groq');
-      }
-
-      logger.debug(LogCategory.GROQ_PROCESSING, 'Received Groq API response', {
-        inputLength: sentences.join(' ').length,
-        outputLength: cleanedText.length,
-        tokensUsed: data.usage?.total_tokens
-      });
-
-      return cleanedText;
-    } catch (error) {
-      logger.error(LogCategory.GROQ_PROCESSING, 'Error processing batch with Groq API', error);
-      throw this.formatError(error);
-    }
-  }
-
-  private formatError(error: unknown): Error {
-    if (error instanceof Error) {
-      // If it's already an Error instance, return it
-      return error;
-    }
-    // If it's a string or something else, wrap it in an Error
-    return new Error(typeof error === 'string' ? error : 'Unknown error occurred');
+    return chunks;
   }
 }
 

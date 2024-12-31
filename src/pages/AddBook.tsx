@@ -14,6 +14,17 @@ import { supabase } from '../lib/supabase/client';
 import { FileMetadata } from '../types/supabase';
 import { Toggle } from '../components/ui/Toggle';
 import { storageService } from '../services/storageService';
+import { documentProcessor } from '../services/documentProcessing/documentProcessor';
+import { ProcessingError } from '../types/processing';
+
+// Add this type for tracking steps
+interface ProcessingStep {
+  id: number;
+  name: string;
+  description: string;
+  progress: number;
+  status: 'waiting' | 'in-progress' | 'completed' | 'error';
+}
 
 export function AddBook() {
   const { user } = useAuth();
@@ -24,6 +35,52 @@ export function AddBook() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [useAI, setUseAI] = useState(false);
+
+  // Add state for tracking steps
+  const [processingSteps] = useState<ProcessingStep[]>([
+    { id: 1, name: 'Loading', description: 'Loading book file', progress: 0, status: 'waiting' },
+    { id: 2, name: 'Converting', description: 'Converting to text format', progress: 0, status: 'waiting' },
+    { id: 3, name: 'Chunking', description: 'Preparing text for AI processing', progress: 0, status: 'waiting' },
+    { id: 4, name: 'Cleaning', description: 'Removing artifacts and metadata', progress: 0, status: 'waiting' },
+    { id: 5, name: 'Assembling', description: 'Piecing document together', progress: 0, status: 'waiting' },
+    { id: 6, name: 'Uploading', description: 'Saving to your library', progress: 0, status: 'waiting' }
+  ]);
+
+  const [currentStep, setCurrentStep] = useState(0);
+  
+  // Update the progress handler
+  const handleProgress = (progress: ProcessingProgress) => {
+    setUploadProgress(progress.progress * 100);
+    
+    // Add debug logging
+    loggingCore.log(LogCategory.DEBUG, 'processing_progress', {
+      stage: progress.stage,
+      progress: progress.progress,
+      details: progress.details
+    });
+    
+    // Update current step based on stage
+    switch (progress.stage) {
+      case 'validation':
+        setCurrentStep(1);
+        break;
+      case 'extraction':
+        setCurrentStep(2);
+        break;
+      case 'chunking':
+        setCurrentStep(3);
+        break;
+      case 'cleaning':
+        setCurrentStep(4);
+        break;
+      case 'assembly':
+        setCurrentStep(5);
+        break;
+      case 'upload':
+        setCurrentStep(6);
+        break;
+    }
+  };
 
   const handleFileAdded = async (content: string, filename: string) => {
     if (!user) {
@@ -90,97 +147,44 @@ export function AddBook() {
       loggingCore.log(LogCategory.FILE, 'file_upload_started', {
         filename: file.name,
         type: file.type,
-        size: file.size
+        size: file.size,
+        useAI
       });
 
-      let text: string;
-      const fileType = file.name.split('.').pop()?.toLowerCase();
+      // Process document using the centralized processor
+      const result = await documentProcessor.processDocument(
+        file,
+        {
+          useAI,
+          preserveFormatting: true,
+          extractImages: false,
+          extractMetadata: true,
+          removeHeaders: true,
+          removeFooters: true,
+          removePageNumbers: true
+        },
+        handleProgress
+      );
 
-      switch (fileType) {
-        case 'pdf': {
-          loggingCore.log(LogCategory.PDF, 'pdf_extraction_started', { 
-            filename: file.name,
-            size: file.size 
-          });
+      // Handle the processed result
+      await handleFileAdded(result.text, file.name);
 
-          const result = await pdfExtractor.extract(file, {
-            mode: 'heavy',
-            preserveFormatting: true,
-            extractImages: false,
-            extractMetadata: true,
-            removeHeaders: true,
-            removeFooters: true,
-            removePageNumbers: true
-          }, (progress) => {
-            setUploadProgress(Math.round(progress * 100));
-          });
-
-          loggingCore.log(LogCategory.PDF, 'pdf_extraction_completed', {
-            filename: file.name,
-            wordCount: result.text.split(/\s+/).length,
-            duration: Date.now() - performance.now()
-          });
-
-          text = result.text;
-          break;
-        }
-        case 'epub': {
-          loggingCore.log(LogCategory.FILE, 'epub_extraction_started', { 
-            filename: file.name 
-          });
-
-          const result = await epubExtractor.extract(file, {
-            mode: 'heavy',
-            preserveFormatting: true,
-            extractImages: false,
-            extractMetadata: true,
-            removeHeaders: true,
-            removeFooters: true,
-            removePageNumbers: true
-          }, (progress) => {
-            setUploadProgress(Math.round(progress * 100));
-          });
-
-          loggingCore.log(LogCategory.FILE, 'epub_extraction_completed', {
-            filename: file.name,
-            wordCount: result.text.split(/\s+/).length
-          });
-
-          text = result.text;
-          break;
-        }
-        case 'txt': {
-          loggingCore.log(LogCategory.FILE, 'txt_processing_started', { 
-            filename: file.name 
-          });
-
-          text = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = reject;
-            reader.readAsText(file);
-          });
-
-          loggingCore.log(LogCategory.FILE, 'txt_processing_completed', {
-            filename: file.name,
-            contentLength: text.length
-          });
-
-          break;
-        }
-        default:
-          throw new Error('Unsupported file type');
-      }
-
-      await handleFileAdded(text, file.name);
+      loggingCore.log(LogCategory.FILE, 'file_processing_completed', {
+        filename: file.name,
+        metadata: result.metadata,
+        stats: result.stats
+      });
 
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'An error occurred';
+      const message = error instanceof ProcessingError 
+        ? error.message 
+        : 'An error occurred while processing the file';
+      
       setErrorMessage(message);
       
       loggingCore.log(LogCategory.ERROR, 'file_processing_failed', {
         filename: file.name,
-        error: message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
       });
     } finally {
@@ -297,19 +301,34 @@ export function AddBook() {
                     </span>
                   </label>
 
-                  {/* Progress Bar */}
-                  {(isProcessing || uploadProgress > 0) && (
-                    <div className="mt-4 w-full">
-                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  {/* Enhanced Progress Indicator */}
+                  {isProcessing && (
+                    <div className="space-y-3 mt-4">
+                      {/* Progress Bar */}
+                      <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                           style={{ width: `${uploadProgress}%` }}
                         />
                       </div>
-                      <div className="mt-2 flex justify-between text-xs text-gray-500">
-                        <span>{uploadProgress}% complete</span>
-                        <span>{isProcessing ? 'Processing...' : 'Ready'}</span>
+
+                      {/* Current Step Display */}
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">
+                            {currentStep}
+                          </span>
+                          <span className="font-medium text-gray-700">
+                            {processingSteps[currentStep - 1]?.name}
+                          </span>
+                        </div>
+                        <span className="text-gray-500">
+                          {Math.round(uploadProgress)}%
+                        </span>
                       </div>
+                      <p className="text-xs text-gray-500">
+                        {processingSteps[currentStep - 1]?.description}
+                      </p>
                     </div>
                   )}
                 </div>
