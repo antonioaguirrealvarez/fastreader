@@ -1,16 +1,12 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ChunkManager } from '../services/text-chunking/chunkManager';
 import { TextChunk } from '../components/reader/TextChunk';
 import { fullTextLogger } from '../services/logging/fullTextLogger';
 import { Chunk } from '../services/text-chunking/types';
-import { useReaderSettings } from '../hooks/useReaderSettings';
-import { useReaderProgress } from '../hooks/useReaderProgress';
-import { useReaderPlayback } from '../hooks/useReaderPlayback';
-import { SpeedControl } from '../components/reader/SpeedControl';
-import { Button } from '../components/ui/Button';
 
 export function ChunkingTest() {
   const [inputText, setInputText] = useState('');
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [chunkManager, setChunkManager] = useState<ChunkManager | null>(null);
   const [visibleChunks, setVisibleChunks] = useState<Chunk[]>([]);
   const [metrics, setMetrics] = useState<{
@@ -18,31 +14,6 @@ export function ChunkingTest() {
     totalChunks: number;
     averageWordsPerChunk: number;
   } | null>(null);
-
-  // Use centralized settings
-  const { settings } = useReaderSettings();
-  
-  // Use centralized progress management
-  const { 
-    progress, 
-    currentWordIndex, 
-    setProgress, 
-    setCurrentWordIndex 
-  } = useReaderProgress();
-
-  // Use centralized playback control
-  const { 
-    isPlaying, 
-    wordsPerMinute, 
-    togglePlayback, 
-    setWordsPerMinute,
-    handleNext,
-    handlePrevious 
-  } = useReaderPlayback({
-    totalWords: metrics?.totalWords ?? 0,
-    currentWordIndex,
-    onWordChange: setCurrentWordIndex
-  });
 
   const handleSubmit = useCallback(() => {
     const startTime = performance.now();
@@ -57,10 +28,6 @@ export function ChunkingTest() {
       const initialChunks = manager.getVisibleChunks(0);
       setVisibleChunks(initialChunks);
 
-      // Reset progress when new text is loaded
-      setProgress(0);
-      setCurrentWordIndex(0);
-
       const duration = performance.now() - startTime;
       fullTextLogger.logRender(duration, {
         processedWordsLength: chunkMetrics.totalWords,
@@ -70,7 +37,7 @@ export function ChunkingTest() {
     } catch (error) {
       fullTextLogger.error(error as Error, { inputLength: inputText.length });
     }
-  }, [inputText, setProgress, setCurrentWordIndex]);
+  }, [inputText]);
 
   const handleWordIndexChange = useCallback((newIndex: number) => {
     if (!chunkManager) return;
@@ -81,40 +48,13 @@ export function ChunkingTest() {
     setCurrentWordIndex(newIndex);
     setVisibleChunks(newChunks);
 
-    // Update progress based on new word index
-    const newProgress = Math.round((newIndex / (metrics?.totalWords || 1)) * 100);
-    setProgress(newProgress);
-
     fullTextLogger.logProgressUpdate('user', {
       oldPosition: currentWordIndex,
       newPosition: newIndex,
       totalWords: metrics?.totalWords || 0,
-      isPlaying
+      isPlaying: false
     });
-  }, [chunkManager, currentWordIndex, metrics?.totalWords, isPlaying, setProgress, setCurrentWordIndex]);
-
-  // Handle keyboard controls
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          togglePlayback();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          handleNext();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          handlePrevious();
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [togglePlayback, handleNext, handlePrevious]);
+  }, [chunkManager, currentWordIndex, metrics?.totalWords]);
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -128,13 +68,16 @@ export function ChunkingTest() {
             className="w-full h-32 p-2 border rounded"
             placeholder="Enter text to chunk..."
           />
-          <Button onClick={handleSubmit}>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
             Process Text
-          </Button>
+          </button>
         </div>
 
         {metrics && (
-          <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded">
+          <div className="bg-gray-100 p-4 rounded">
             <h2 className="font-semibold mb-2">Metrics:</h2>
             <ul>
               <li>Total Words: {metrics.totalWords}</li>
@@ -143,16 +86,6 @@ export function ChunkingTest() {
             </ul>
           </div>
         )}
-
-        <div className="flex items-center space-x-4">
-          <Button onClick={togglePlayback}>
-            {isPlaying ? 'Pause' : 'Play'}
-          </Button>
-          <SpeedControl
-            wordsPerMinute={wordsPerMinute}
-            onChange={setWordsPerMinute}
-          />
-        </div>
 
         <div className="space-y-2">
           <input
@@ -163,7 +96,7 @@ export function ChunkingTest() {
             onChange={(e) => handleWordIndexChange(Number(e.target.value))}
             className="w-full"
           />
-          <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="text-sm text-gray-600">
             Word Position: {currentWordIndex} / {metrics?.totalWords ?? 0}
           </div>
         </div>
@@ -176,10 +109,7 @@ export function ChunkingTest() {
             chunk={chunk}
             currentWordIndex={currentWordIndex}
             isActive={true}
-            darkMode={settings.darkMode}
-            fontSize={settings.fontSize}
-            boldFirstLetter={settings.boldFirstLetter}
-            onWordClick={(wordIndex) => handleWordIndexChange(chunk.startWord + wordIndex)}
+            darkMode={false}
           />
         ))}
       </div>

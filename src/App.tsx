@@ -2,11 +2,15 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { DynamicHero } from './components/DynamicHero';
 import { DemoReader } from './components/DemoReader';
-import { Features } from './components/Features';
-import { CustomerLogos } from './components/CustomerLogos';
-import { TestimonialCarousel } from './components/TestimonialCarousel';
-import { ScienceSection } from './components/ScienceSection';
-import { PricingSection } from './components/PricingSection';
+import { Header } from './components/Header';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { PageBackground } from './components/ui/PageBackground';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { supabase } from './services/supabase/config';
+import { FileConversionTest } from './test/FileConversionTest';
+import { SupabaseTableTest } from './test/SupabaseTableTest';
+import { GroqTest } from './test/GroqTest';
 import { Reader } from './pages/Reader';
 import { Library } from './pages/Library';
 import { AddBook } from './pages/AddBook';
@@ -14,17 +18,7 @@ import { SupabaseTest } from './test/SupabaseTest';
 import { ApiTest } from './test/ApiTest';
 import { UploadTest } from './test/UploadTest';
 import { SpritzTest } from './test/SpritzTest';
-import { Header } from './components/Header';
-import { Footer } from './components/Footer';
-import { AuthProvider } from './contexts/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { PageBackground } from './components/ui/PageBackground';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { authService } from './services/auth/authService';
-import { supabase } from './services/supabase/config';
-import { FileConversionTest } from './test/FileConversionTest';
-import { SupabaseTableTest } from './test/SupabaseTableTest';
-import { GroqTest } from './test/GroqTest';
+import FullTextDemo from './pages/FullTextDemo';
 
 function HomePage() {
   return (
@@ -101,6 +95,7 @@ export default function App() {
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/supabase-test" element={<SupabaseTableTest />} />
             <Route path="/test/groq" element={process.env.NODE_ENV === 'development' ? <GroqTest /> : <Navigate to="/" />} />
+            <Route path="/test/full-text" element={<FullTextDemo />} />
           </Routes>
         </AuthProvider>
       </Router>
