@@ -11,6 +11,7 @@
     "vercel-build": "vite build"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.4",
     "@supabase/supabase-js": "^2.46.1",
     "axios": "^1.7.7",
     "clsx": "^2.1.1",
@@ -26,7 +27,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
-    "tailwind-merge": "^2.5.5",
+    "tailwind-merge": "^2.6.0",
     "uuid": "^9.0.1",
     "winston": "^3.17.0",
     "zustand": "^5.0.1"

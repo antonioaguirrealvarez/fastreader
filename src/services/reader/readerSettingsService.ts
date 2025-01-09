@@ -2,11 +2,15 @@ import { create } from 'zustand';
 
 export interface ReaderSettings {
   darkMode: boolean;
+  hideHeader: boolean;
   fontSize: 'small' | 'medium' | 'large' | 'extra-large';
-  pauseOnPunctuation: boolean;
   lineSpacing: 'normal' | 'relaxed' | 'loose';
   wordSpacing: 'normal' | 'wide' | 'wider';
+  pauseOnPunctuation: boolean;
   autoScroll: boolean;
+  chunkInPages: boolean;
+  holdInMemory: boolean;
+  boldLetters?: boolean;
 }
 
 interface ReaderSettingsState {
@@ -15,13 +19,16 @@ interface ReaderSettingsState {
   resetSettings: () => void;
 }
 
-const DEFAULT_SETTINGS: ReaderSettings = {
+export const DEFAULT_SETTINGS: ReaderSettings = {
   darkMode: false,
+  hideHeader: false,
   fontSize: 'medium',
-  pauseOnPunctuation: true,
   lineSpacing: 'relaxed',
   wordSpacing: 'wide',
+  pauseOnPunctuation: true,
   autoScroll: true,
+  chunkInPages: true,
+  holdInMemory: false
 };
 
 export const useReaderSettings = create<ReaderSettingsState>((set) => ({

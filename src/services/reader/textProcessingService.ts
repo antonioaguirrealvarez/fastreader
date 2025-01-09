@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ChunkingService } from '../textProcessing/chunkingService';
+import { useReaderSettings } from './readerSettingsService';
 
 interface Chunk {
   id: string;
@@ -30,6 +31,7 @@ interface TextProcessingState {
   setWpm: (wpm: number) => void;
   setIsProgrammaticScroll: (isProgrammatic: boolean) => void;
   navigateChunk: (direction: 'next' | 'prev') => number;
+  getAllWords: () => string[];
 
   // Utility methods
   getLineSpacingClass: () => string;
@@ -100,34 +102,56 @@ export const useTextProcessing = create<TextProcessingState>((set, get) => ({
     return newIndex;
   },
 
-  getLineSpacingClass: () => {
+  getAllWords: () => {
     const state = get();
-    switch (state.lineSpacing) {
-      case 'normal': return 'leading-normal';
-      case 'relaxed': return 'leading-relaxed';
-      case 'loose': return 'leading-loose';
-      default: return 'leading-relaxed';
+    return state.content.split(/\s+/);
+  },
+
+  getLineSpacingClass: () => {
+    const settings = useReaderSettings.getState().settings;
+    switch (settings.fontSize) {
+      case 'small':
+        return 'leading-[2]';
+      case 'medium':
+        return 'leading-[2.25]';
+      case 'large':
+        return 'leading-[2.75]';
+      case 'extra-large':
+        return 'leading-[3.75]';
+      default:
+        return 'leading-[2.25]';
     }
   },
 
   getWordSpacingClass: () => {
-    const state = get();
-    switch (state.wordSpacing) {
-      case 'normal': return 'tracking-normal';
-      case 'wide': return 'tracking-wide';
-      case 'wider': return 'tracking-wider';
-      default: return 'tracking-wide';
+    const settings = useReaderSettings.getState().settings;
+    switch (settings.fontSize) {
+      case 'small':
+        return 'tracking-wide font-[350]';
+      case 'medium':
+        return 'tracking-wider font-[350]';
+      case 'large':
+        return 'tracking-[0.075em] font-[350]';
+      case 'extra-large':
+        return 'tracking-normal font-[350] px-[0.125em]';
+      default:
+        return 'tracking-wider font-[350]';
     }
   },
 
   getFontSizeClass: () => {
-    const state = get();
-    switch (state.fontSize) {
-      case 'small': return 'text-lg';
-      case 'medium': return 'text-xl';
-      case 'large': return 'text-2xl';
-      case 'extra-large': return 'text-3xl';
-      default: return 'text-xl';
+    const settings = useReaderSettings.getState().settings;
+    switch (settings.fontSize) {
+      case 'small':
+        return 'text-lg font-normal';
+      case 'medium':
+        return 'text-2xl font-normal';
+      case 'large':
+        return 'text-3xl font-normal';
+      case 'extra-large':
+        return 'text-4xl font-normal';
+      default:
+        return 'text-2xl font-normal';
     }
   }
 })); 

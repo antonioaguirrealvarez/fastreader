@@ -2,7 +2,6 @@ import React from 'react';
 import { Book, Play, Pause, SkipBack, SkipForward, Settings } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { WPMControl } from './WPMControl';
-import { Slider } from '../ui/Slider';
 
 interface ReaderControlsProps {
   progress: number;
@@ -16,6 +15,7 @@ interface ReaderControlsProps {
   onToggleLibrary: () => void;
   onToggleSettings: () => void;
   onProgressChange: (progress: number) => void;
+  children?: React.ReactNode;
 }
 
 export function ReaderControls({
@@ -30,6 +30,7 @@ export function ReaderControls({
   onToggleLibrary,
   onToggleSettings,
   onProgressChange,
+  children
 }: ReaderControlsProps) {
   return (
     <div className={`fixed bottom-0 left-0 right-0 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -48,11 +49,12 @@ export function ReaderControls({
             max="100"
             value={progress}
             onChange={(e) => onProgressChange(Number(e.target.value))}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer group-hover:opacity-100 transition-opacity"
+            className="absolute inset-0 w-full h-full cursor-pointer opacity-100 z-10"
+            style={{ WebkitAppearance: 'none', background: 'transparent' }}
           />
 
           <div 
-            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-blue-600 rounded-full shadow-lg transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-blue-600 rounded-full shadow-lg transform -translate-x-1/2 pointer-events-none"
             style={{ left: `${progress}%` }}
           >
             <div className="absolute inset-0 bg-blue-400 rounded-full animate-ping" />
@@ -109,6 +111,7 @@ export function ReaderControls({
               onChange={onSpeedChange}
               darkMode={darkMode}
             />
+            {children}
             <Button
               variant="ghost"
               size="sm"

@@ -28,13 +28,17 @@ export function LibrarySidebar({ isOpen, onClose, darkMode, hideHeader }: Librar
   }, [user?.id, isOpen, loadFiles]);
 
   const handleStartReading = (file: { id: string; content: string; name: string }) => {
-    navigate('/reader', { 
-      state: { 
-        fileId: file.id,
-        fileName: file.name,
-        content: file.content 
-      } 
-    });
+    if (file.id === 'test-full-text') {
+      navigate('/test-full-text');
+    } else {
+      navigate('/reader', { 
+        state: { 
+          fileId: file.id,
+          fileName: file.name,
+          content: file.content 
+        } 
+      });
+    }
     onClose();
   };
 

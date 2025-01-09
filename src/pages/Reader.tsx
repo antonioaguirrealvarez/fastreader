@@ -7,6 +7,7 @@ import { SettingsPanel } from '../components/reader/SettingsPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useReaderStore } from '../stores/readerStore';
 import { progressService } from '../services/database/progress';
 import { loggingCore } from '../services/logging/core';
 import { LogLevel } from '../services/logging/types';
@@ -34,7 +35,7 @@ export function Reader() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { fileId, fileName, content } = location.state || {};
+  const { fileId: locationFileId, fileName: locationFileName, content: locationContent } = location.state || {};
   
   // Settings from store
   const { 
@@ -42,6 +43,16 @@ export function Reader() {
     loadSettings,
     updateSettings
   } = useSettingsStore();
+
+  // Reader store for file info
+  const { fileId, fileName, setFileInfo } = useReaderStore();
+
+  // Update file info in store when location state changes
+  useEffect(() => {
+    if (locationFileId && locationFileName) {
+      setFileInfo(locationFileId, locationFileName);
+    }
+  }, [locationFileId, locationFileName, setFileInfo]);
 
   // Load settings on mount
   useEffect(() => {
@@ -77,10 +88,10 @@ export function Reader() {
   // Initialize progress when file is loaded
   useEffect(() => {
     const initializeReaderProgress = async () => {
-      if (!user?.id || !fileId || !content) return;
+      if (!user?.id || !fileId || !locationContent) return;
       
       try {
-        await progressService.initializeProgress(user.id, fileId, content.split(/\s+/).length);
+        await progressService.initializeProgress(user.id, fileId, locationContent.split(/\s+/).length);
       } catch (error) {
         loggingCore.log(LogCategory.ERROR, 'progress_initialization_failed', {
           userId: user.id,
@@ -91,14 +102,23 @@ export function Reader() {
     };
 
     initializeReaderProgress();
-  }, [user?.id, fileId, content]);
+  }, [user?.id, fileId, locationContent]);
+
+  const [wordsPerMinute, setWordsPerMinute] = useState(300);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const words = locationContent?.split(/\s+/) || [];
+
+  const hasInitialized = useRef(false);
 
   // Initialize progress and load saved progress
   useEffect(() => {
     if (hasInitialized.current) return;
     
     const initializeReaderProgress = async () => {
-      if (!user?.id || !fileId || !content) return;
+      if (!user?.id || !fileId || !locationContent) return;
       
       try {
         hasInitialized.current = true;
@@ -112,7 +132,7 @@ export function Reader() {
         }
 
         // Then initialize progress service
-        await progressService.initializeProgress(user.id, fileId, content.length);
+        await progressService.initializeProgress(user.id, fileId, locationContent.length);
       } catch (error) {
         hasInitialized.current = false;
         loggingCore.log(LogCategory.ERROR, 'progress_initialization_failed', {
@@ -124,16 +144,7 @@ export function Reader() {
     };
 
     initializeReaderProgress();
-  }, [user?.id, fileId, content]);
-
-  const [wordsPerMinute, setWordsPerMinute] = useState(300);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const words = content?.split(/\s+/) || [];
-
-  const hasInitialized = useRef(false);
+  }, [user?.id, fileId, locationContent]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
@@ -153,7 +164,7 @@ export function Reader() {
     if (isLibraryOpen) setIsLibraryOpen(false);
   };
 
-  const handleUpdateSettings = (newSettings: ReaderSettings) => {
+  const handleUpdateSettings = (newSettings: Partial<ReaderSettings>) => {
     if (!user?.id) return;
     
     updateSettings(newSettings, user.id);
@@ -218,7 +229,7 @@ export function Reader() {
             wordIndex={currentWordIndex}
             totalWords={words.length}
             userId={user?.id || ''}
-            fileId={fileId}
+            fileId={fileId || ''}
             wordsPerMinute={wordsPerMinute}
             isPlaying={isPlaying}
             settings={settings}

@@ -19,6 +19,7 @@ import { ApiTest } from './test/ApiTest';
 import { UploadTest } from './test/UploadTest';
 import { SpritzTest } from './test/SpritzTest';
 import FullTextDemo from './pages/FullTextDemo';
+import { TestFullText } from './pages/TestFullText';
 
 function HomePage() {
   return (
@@ -96,6 +97,7 @@ export default function App() {
             <Route path="/supabase-test" element={<SupabaseTableTest />} />
             <Route path="/test/groq" element={process.env.NODE_ENV === 'development' ? <GroqTest /> : <Navigate to="/" />} />
             <Route path="/test/full-text" element={<FullTextDemo />} />
+            <Route path="/test/full-text-reader" element={<TestFullText />} />
           </Routes>
         </AuthProvider>
       </Router>

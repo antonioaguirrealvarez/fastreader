@@ -1,13 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { loggingCore, LogCategory } from '../logging/core';
+import { useReaderSettings } from '../reader/readerSettingsService';
 
 const CHUNK_SIZE = 1000; // words per chunk/page
-const MEMORY_THRESHOLD = 50000; // If text has more than 50k words, use efficient chunking
 const CHUNK_WINDOW = 1; // Keep one chunk before and after current chunk
 
 // Helper function to safely get memory usage
 function getMemoryUsage(): number | undefined {
-  return (performance as any).memory?.usedJSHeapSize;
+  const performance = window.performance as unknown as { memory?: { usedJSHeapSize: number } };
+  return performance.memory?.usedJSHeapSize;
 }
 
 export interface Chunk {
@@ -19,26 +20,28 @@ export interface Chunk {
 
 export class ChunkingService {
   private content: string;
-  private words: string[];
-  private chunks: Map<number, Chunk>; // Map chunk index to chunk
+  private words: string[] | null = null; // Don't keep all words in memory
+  private chunks: Map<number, Chunk>;
   private totalWords: number;
   private isLargeText: boolean;
-  private rawChunks: { startIndex: number; endIndex: number }[] = []; // Initialize empty array
-  private currentWordIndex: number = 0; // Track current word index
+  private rawChunks: { startIndex: number; endIndex: number }[] = [];
+  private currentWordIndex: number = 0;
 
   constructor(content: string) {
     const startTime = performance.now();
     this.content = content;
-    this.words = content.split(/\s+/).filter(word => word.length > 0);
-    this.totalWords = this.words.length;
-    this.isLargeText = this.totalWords > MEMORY_THRESHOLD;
+    // Calculate total words without keeping array in memory
+    this.totalWords = content.split(/\s+/).filter(word => word.length > 0).length;
+    
+    const settings = useReaderSettings.getState().settings;
+    this.isLargeText = !settings.holdInMemory;
     this.chunks = new Map();
     
     if (this.isLargeText) {
-      // For large texts, only store chunk boundaries initially
+      // When holdInMemory is false, only store chunk boundaries
       this.rawChunks = this.createRawChunks();
     } else {
-      // For small texts, create all chunks immediately
+      // When holdInMemory is true, create all chunks immediately
       this.createAllChunks();
     }
 
@@ -48,8 +51,24 @@ export class ChunkingService {
       initialChunksInMemory: this.chunks.size,
       rawChunkBoundaries: this.rawChunks.length,
       memoryUsage: getMemoryUsage(),
-      initializationTime: performance.now() - startTime
+      initializationTime: performance.now() - startTime,
+      holdInMemory: settings.holdInMemory
     });
+  }
+
+  private getWordsForRange(startIndex: number, endIndex: number): string[] {
+    // Only split the content for the requested range
+    const allWords = this.content.split(/\s+/).filter(word => word.length > 0);
+    return allWords.slice(startIndex, endIndex);
+  }
+
+  private createChunk(startIndex: number, endIndex: number): Chunk {
+    return {
+      id: uuidv4(),
+      words: this.getWordsForRange(startIndex, endIndex),
+      startIndex,
+      endIndex
+    };
   }
 
   private createRawChunks(): { startIndex: number; endIndex: number }[] {
@@ -93,15 +112,6 @@ export class ChunkingService {
       memoryUsage: getMemoryUsage(),
       operationTime: performance.now() - startTime
     });
-  }
-
-  private createChunk(startIndex: number, endIndex: number): Chunk {
-    return {
-      id: uuidv4(),
-      words: this.words.slice(startIndex, endIndex),
-      startIndex,
-      endIndex
-    };
   }
 
   private getChunkIndex(wordIndex: number): number {
@@ -161,16 +171,9 @@ export class ChunkingService {
     this.currentWordIndex = wordIndex;
     const currentChunkIndex = this.getChunkIndex(wordIndex);
     
-    // Load chunk range into memory (but don't return all of them)
-    if (this.isLargeText) {
-      this.loadChunkRange(currentChunkIndex);
-    }
-
-    // Only return the current chunk
-    const currentChunk = this.chunks.get(currentChunkIndex);
-    
     // Log if we're crossing chunk boundaries
     if (this.getChunkIndex(previousWordIndex) !== currentChunkIndex) {
+      const currentChunk = this.chunks.get(currentChunkIndex);
       loggingCore.log(LogCategory.DOCUMENT_PROCESSING, 'chunk_boundary_crossed', {
         previousWordIndex,
         newWordIndex: wordIndex,
@@ -178,11 +181,21 @@ export class ChunkingService {
         newChunkIndex: currentChunkIndex,
         chunksInMemory: this.chunks.size,
         visibleChunkFirstWord: currentChunk?.words[0],
-        memoryUsage: getMemoryUsage()
+        memoryUsage: getMemoryUsage(),
+        isLargeText: this.isLargeText
       });
     }
-
-    return currentChunk ? [currentChunk] : [];
+    
+    if (this.isLargeText) {
+      // Load chunk range into memory (but don't return all of them)
+      this.loadChunkRange(currentChunkIndex);
+      // Only return the current chunk
+      const currentChunk = this.chunks.get(currentChunkIndex);
+      return currentChunk ? [currentChunk] : [];
+    } else {
+      // When holdInMemory is true, return all chunks
+      return Array.from(this.chunks.values());
+    }
   }
 
   public getTotalWords(): number {
