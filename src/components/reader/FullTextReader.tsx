@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Button } from '../ui/Button';
 import { Lock, Unlock } from 'lucide-react';
-import { useReaderSettings } from '../../services/reader/readerSettingsService';
+import { useReaderSettings, ReaderSettings } from '../../services/reader/readerSettingsService';
 import { useTextProcessing } from '../../services/reader/textProcessingService';
 import { useAutoScroll } from '../../services/reader/autoScrollService';
 import { loggingCore, LogCategory } from '../../services/logging/core';
@@ -12,6 +12,8 @@ import { LibrarySidebar } from './LibrarySidebar';
 import { useAuth } from '../../contexts/AuthContext';
 import { progressService } from '../../services/database/progress';
 import { settingsService } from '../../services/database/settings';
+import { useNavigate } from 'react-router-dom';
+import { useReaderStore } from '../../stores/readerStore';
 
 interface FullTextReaderProps {
   content: string;
@@ -29,11 +31,19 @@ export function FullTextReader({
   content,
   initialWpm = 300,
   darkMode = false,
-  title,
   onBackToLibrary,
-  fileId,
   initialProgress = 0,
-}: FullTextReaderProps) {
+}: Omit<FullTextReaderProps, 'title' | 'fileId'>) {
+  const navigate = useNavigate();
+  const { fileId, fileName, currentMode } = useReaderStore();
+
+  // Redirect if no file info
+  useEffect(() => {
+    if (!fileId || !fileName || currentMode !== 'full-text') {
+      navigate('/library');
+    }
+  }, [fileId, fileName, currentMode, navigate]);
+
   // Services
   const { settings, updateSettings } = useReaderSettings();
   const textProcessing = useTextProcessing();
@@ -434,7 +444,7 @@ export function FullTextReader({
           updateSettings({
             darkMode: savedSettings.dark_mode,
             hideHeader: savedSettings.hide_header,
-            fontSize: savedSettings.font_size,
+            fontSize: savedSettings.font_size as ReaderSettings['fontSize'],
             pauseOnPunctuation: savedSettings.pause_on_punctuation
           });
 
@@ -544,11 +554,10 @@ export function FullTextReader({
   }, [handleHorizontalScroll, handleTouchStart, handleTouchEnd]);
 
   return (
-    <div className={`flex flex-col flex-1 relative ${settings.darkMode ? 'bg-gray-900' : 'bg-white'}`}>
-      {/* Header */}
-      {!settings.hideHeader && (
+    <div className={`min-h-screen flex flex-col ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {!settings?.hideHeader && (
         <ReaderHeader 
-          title={title || 'Text Reader'}
+          title={fileName || 'Unknown Book'}
           chapter={`${textProcessing.currentWordIndex + 1} of ${textProcessing.totalWords} words`}
           darkMode={settings.darkMode}
           onBackToLibrary={onBackToLibrary}

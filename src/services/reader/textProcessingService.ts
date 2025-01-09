@@ -143,15 +143,15 @@ export const useTextProcessing = create<TextProcessingState>((set, get) => ({
     const settings = useReaderSettings.getState().settings;
     switch (settings.fontSize) {
       case 'small':
-        return 'text-lg font-normal';
+        return 'text-2xl font-normal';
       case 'medium':
-        return 'text-2xl font-normal';
-      case 'large':
         return 'text-3xl font-normal';
-      case 'extra-large':
+      case 'large':
         return 'text-4xl font-normal';
+      case 'extra-large':
+        return 'text-6xl font-normal';
       default:
-        return 'text-2xl font-normal';
+        return 'text-3xl font-normal';
     }
   }
 })); 

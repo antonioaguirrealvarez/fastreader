@@ -179,11 +179,11 @@ export function WordDisplay({
   // Remove console.log for font size
   const getFontSize = () => {
     switch (settings.fontSize) {
-      case 'small': return 'text-lg sm:text-xl';
-      case 'medium': return 'text-xl sm:text-2xl';
-      case 'large': return 'text-3xl sm:text-5xl';
-      case 'extra-large': return 'text-5xl sm:text-7xl';
-      default: return 'text-xl sm:text-2xl';
+      case 'small': return 'text-2xl sm:text-3xl';
+      case 'medium': return 'text-3xl sm:text-4xl';
+      case 'large': return 'text-4xl sm:text-6xl';
+      case 'extra-large': return 'text-6xl sm:text-8xl';
+      default: return 'text-3xl sm:text-4xl';
     }
   };
 

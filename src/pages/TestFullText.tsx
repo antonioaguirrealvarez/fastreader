@@ -25,7 +25,7 @@ export function TestFullText() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [initialProgress, setInitialProgress] = useState<number>(0);
-  const { fileId } = useReaderStore();
+  const { fileId, fileName } = useReaderStore();
 
   useEffect(() => {
     const loadDocument = async () => {
@@ -120,7 +120,7 @@ export function TestFullText() {
           content={content}
           initialWpm={300}
           darkMode={false}
-          title="Test Full Text Reader"
+          title={fileName || 'Text Reader'}
           onBackToLibrary={handleBackToLibrary}
           fileId={fileId || 'default-test-file'}
           initialProgress={initialProgress}

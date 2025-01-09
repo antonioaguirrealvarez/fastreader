@@ -35,7 +35,7 @@ export function Reader() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { fileId: locationFileId, fileName: locationFileName, content: locationContent } = location.state || {};
+  const { content: locationContent } = location.state || {};
   
   // Settings from store
   const { 
@@ -45,14 +45,14 @@ export function Reader() {
   } = useSettingsStore();
 
   // Reader store for file info
-  const { fileId, fileName, setFileInfo } = useReaderStore();
+  const { fileId, fileName, currentMode } = useReaderStore();
 
-  // Update file info in store when location state changes
+  // Redirect if no file info
   useEffect(() => {
-    if (locationFileId && locationFileName) {
-      setFileInfo(locationFileId, locationFileName);
+    if (!fileId || !fileName || currentMode !== 'rsvp') {
+      navigate('/library');
     }
-  }, [locationFileId, locationFileName, setFileInfo]);
+  }, [fileId, fileName, currentMode, navigate]);
 
   // Load settings on mount
   useEffect(() => {

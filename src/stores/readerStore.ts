@@ -36,7 +36,15 @@ interface ReaderState {
   // File Info
   fileId: string | null;
   fileName: string | null;
-  setFileInfo: (fileId: string, fileName: string) => void;
+  content: string | null;
+  currentMode: 'library' | 'rsvp' | 'full-text' | null;
+  setFileInfo: (info: { 
+    fileId: string; 
+    fileName: string; 
+    content?: string;
+    mode?: 'rsvp' | 'full-text' 
+  }) => void;
+  clearFileInfo: () => void;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -121,7 +129,22 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   // File Info
   fileId: null,
   fileName: null,
-  setFileInfo: (fileId: string, fileName: string) => {
-    set({ fileId, fileName });
+  content: null,
+  currentMode: null,
+  setFileInfo: (info) => {
+    set({ 
+      fileId: info.fileId, 
+      fileName: info.fileName,
+      content: info.content || get().content,
+      currentMode: info.mode || get().currentMode
+    });
+  },
+  clearFileInfo: () => {
+    set({ 
+      fileId: null, 
+      fileName: null, 
+      content: null,
+      currentMode: null 
+    });
   }
 })); 

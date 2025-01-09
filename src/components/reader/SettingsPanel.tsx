@@ -3,7 +3,7 @@ import { Type, Eye, Layout, BookOpen } from 'lucide-react';
 import { Switch } from '../ui/Switch';
 import { CloseButton } from '../ui/CloseButton';
 import { Button } from '../ui/Button';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ReaderSettings } from '../../services/reader/readerSettingsService';
 import { useReaderStore } from '../../stores/readerStore';
 
@@ -23,28 +23,42 @@ export function SettingsPanel({
   hideHeader
 }: SettingsPanelProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const { fileId } = useReaderStore();
 
   const handleModeChange = (mode: 'rsvp' | 'full-text') => {
     // Close settings panel
     onClose();
     
-    // Navigate to appropriate route
+    // Get current state
+    const currentState = useReaderStore.getState();
+    const { fileId, fileName } = currentState;
+    
+    if (!fileId || !fileName) {
+      console.error('Missing file information');
+      return;
+    }
+
+    // Update mode in readerStore
+    useReaderStore.getState().setFileInfo({
+      fileId,
+      fileName,
+      mode
+    });
+    
+    // Navigate to appropriate route with content
     if (mode === 'rsvp') {
-      navigate('/reader', { 
-        state: { fileId } 
+      navigate('/reader', {
+        state: { content: currentState.content }
       });
     } else {
-      navigate('/test/full-text-reader', { 
-        state: { fileId } 
-      });
+      navigate('/test/full-text-reader');
     }
   };
 
-  // Determine current mode based on route
-  const isRSVPMode = location.pathname === '/reader';
-  const isFullTextMode = location.pathname === '/test/full-text-reader';
+  // Determine current mode based on readerStore instead of route
+  const currentMode = useReaderStore((state) => state.currentMode);
+  const isRSVPMode = currentMode === 'rsvp';
+  const isFullTextMode = currentMode === 'full-text';
 
   return (
     <div className={`
@@ -222,51 +236,53 @@ export function SettingsPanel({
               </div>
             </div>
 
-            {/* Chunking Settings */}
-            <div className="space-y-4">
-              <h3 className={`text-sm font-medium flex items-center gap-2 ${
-                settings.darkMode ? 'text-gray-200' : 'text-gray-900'
-              }`}>
-                <Layout className="h-4 w-4" />
-                Chunking Settings
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col space-y-1">
-                    <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
-                      settings.darkMode ? 'text-gray-300' : 'text-gray-600'
-                    }`}>
-                      Chunk in Pages
-                    </label>
-                    <p className={`text-sm ${settings.darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Display text in paginated chunks
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.chunkInPages}
-                    onCheckedChange={(checked) => onUpdateSettings({ chunkInPages: checked })}
-                  />
-                </div>
-                {settings.chunkInPages && (
+            {/* Chunking Settings - Only show in full-text mode */}
+            {isFullTextMode && (
+              <div className="space-y-4">
+                <h3 className={`text-sm font-medium flex items-center gap-2 ${
+                  settings.darkMode ? 'text-gray-200' : 'text-gray-900'
+                }`}>
+                  <Layout className="h-4 w-4" />
+                  Chunking Settings
+                </h3>
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col space-y-1">
                       <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
                         settings.darkMode ? 'text-gray-300' : 'text-gray-600'
                       }`}>
-                        Hold All Chunks in Memory
+                        Chunk in Pages
                       </label>
                       <p className={`text-sm ${settings.darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Keep all chunks loaded for faster navigation
+                        Display text in paginated chunks
                       </p>
                     </div>
                     <Switch
-                      checked={settings.holdInMemory}
-                      onCheckedChange={(checked) => onUpdateSettings({ holdInMemory: checked })}
+                      checked={settings.chunkInPages}
+                      onCheckedChange={(checked) => onUpdateSettings({ chunkInPages: checked })}
                     />
                   </div>
-                )}
+                  {settings.chunkInPages && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col space-y-1">
+                        <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
+                          settings.darkMode ? 'text-gray-300' : 'text-gray-600'
+                        }`}>
+                          Hold All Chunks in Memory
+                        </label>
+                        <p className={`text-sm ${settings.darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Keep all chunks loaded for faster navigation
+                        </p>
+                      </div>
+                      <Switch
+                        checked={settings.holdInMemory}
+                        onCheckedChange={(checked) => onUpdateSettings({ holdInMemory: checked })}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

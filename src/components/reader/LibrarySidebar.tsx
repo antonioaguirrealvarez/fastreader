@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
-import { useLibraryStore } from '../../stores/libraryStore';
 import { FileText, BookOpen } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { useNavigate } from 'react-router-dom';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { Skeleton } from '../ui/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
+import { useReaderStore } from '../../stores/readerStore';
 
 interface LibrarySidebarProps {
   isOpen: boolean;
@@ -19,7 +19,8 @@ export function LibrarySidebar({ isOpen, onClose, darkMode, hideHeader }: Librar
   const isLoading = useLibraryStore(state => state.isLoading);
   const error = useLibraryStore(state => state.error);
   const loadFiles = useLibraryStore(state => state.loadFiles);
-  const navigate = useNavigate();
+  const storeMode = useReaderStore(state => state.currentMode);
+  const currentMode = (storeMode === 'rsvp' || storeMode === 'full-text') ? storeMode : 'rsvp';
 
   useEffect(() => {
     if (user?.id && isOpen) {
@@ -28,17 +29,15 @@ export function LibrarySidebar({ isOpen, onClose, darkMode, hideHeader }: Librar
   }, [user?.id, isOpen, loadFiles]);
 
   const handleStartReading = (file: { id: string; content: string; name: string }) => {
-    if (file.id === 'test-full-text') {
-      navigate('/test-full-text');
-    } else {
-      navigate('/reader', { 
-        state: { 
-          fileId: file.id,
-          fileName: file.name,
-          content: file.content 
-        } 
-      });
-    }
+    // Update readerStore with file info
+    useReaderStore.getState().setFileInfo({
+      fileId: file.id,
+      fileName: file.name,
+      content: file.content,
+      mode: currentMode // Keep current mode when switching files
+    });
+
+    // Close sidebar
     onClose();
   };
 

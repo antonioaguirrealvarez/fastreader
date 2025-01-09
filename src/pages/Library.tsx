@@ -17,6 +17,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { loggingCore } from '../services/logging/core';
 import { settingsService } from '../services/database/settings';
 import type { LibraryFile } from '../types/supabase';
+import { useReaderStore } from '../stores/readerStore';
 
 // Add proper type for progress data
 interface ProgressData {
@@ -176,14 +177,17 @@ export function Library() {
   };
 
   const handleStartReading = (file: { id: string; content: string; name: string }) => {
-    // Set this as the last read file
-    setLastReadFile(file.id);
+    // Set file info in readerStore
+    useReaderStore.getState().setFileInfo({
+      fileId: file.id,
+      fileName: file.name,
+      content: file.content,
+      mode: 'rsvp' // Default to RSVP mode when opening from library
+    });
     
-    // Navigate to reader with this specific file
+    // Navigate to reader with content
     navigate('/reader', { 
       state: { 
-        fileId: file.id,
-        fileName: file.name,
         content: file.content 
       } 
     });
