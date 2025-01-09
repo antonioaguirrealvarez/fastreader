@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import { settingsService } from '../services/database/settings';
 
+// Get the base URL for redirects based on environment
+const getRedirectUrl = () => {
+  // In development, use localhost
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5173';
+  }
+  // In production, use the actual origin
+  return window.location.origin;
+};
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -26,12 +36,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {
@@ -39,11 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          redirectTo: window.location.origin
+          redirectTo: `${getRedirectUrl()}/auth/callback`
         }
       });
 

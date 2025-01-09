@@ -47,12 +47,16 @@ function AuthCallback() {
   const navigate = useNavigate();
   
   useEffect(() => {
-    console.log('Auth callback location:', location);
     const handleAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navigate('/library', { replace: true });
-      } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          navigate('/library', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
+      } catch (error) {
+        console.error('Auth callback error:', error);
         navigate('/', { replace: true });
       }
     };
