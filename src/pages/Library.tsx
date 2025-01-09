@@ -450,16 +450,16 @@ export function Library() {
               {filteredFiles.map(file => (
                 <Card
                   key={file.id}
-                  className={`overflow-hidden transition-all duration-200 hover:shadow-lg group ${
+                  className={`group relative overflow-hidden transition-all duration-200 hover:shadow-lg ${
                     selectedFiles.has(file.id) ? 'ring-2 ring-blue-500' : ''
                   }`}
                   onClick={() => handleStartReading(file)}
                 >
-                  <div className="p-4 flex items-start justify-between">
+                  <div className="p-4">
                     <div className="flex items-start gap-3">
                       <button
                         onClick={(e) => toggleFileSelection(file.id, e)}
-                        className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                       >
                         {selectedFiles.has(file.id) ? (
                           <CheckSquare className="h-5 w-5 text-blue-500" />
@@ -467,51 +467,55 @@ export function Library() {
                           <Square className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                         )}
                       </button>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{file.name}</h3>
-                        <p className="text-sm text-gray-500">
-                          Added {new Date(file.timestamp).toLocaleDateString()}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 truncate pr-8">{file.name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-sm text-gray-500">
+                            Added {new Date(file.timestamp).toLocaleDateString()}
+                          </span>
+                          <span className="text-gray-300">•</span>
+                          <span className="text-sm text-gray-500">
+                            {Math.round(file.content.length / 200)} min read
+                          </span>
+                        </div>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFile(file.id);
+                        }}
+                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteFile(file.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-600 hover:bg-red-50 -mt-1 -mr-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
 
-                  {/* Keep existing progress bar and Start Reading button */}
-                  <div className="p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Text File</span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-600 transition-all duration-300"
-                          style={{ width: `${readingProgress[file.id] || 0}%` }}
-                        />
-                      </div>
+                    <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span className="flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          Text Document
+                        </span>
                         <span>
                           {readingProgress[file.id] 
                             ? `${readingProgress[file.id]}% complete` 
                             : 'Not started'}
                         </span>
-                        <span>{Math.round(file.content.length / 200)} min read</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-600 transition-all duration-300"
+                          style={{ width: `${readingProgress[file.id] || 0}%` }}
+                        />
                       </div>
                     </div>
+
                     <Button
                       variant="primary"
                       size="sm"
-                      className="w-full mt-2 flex items-center justify-center gap-2"
+                      className="w-full mt-4 flex items-center justify-center gap-2"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleStartReading(file);

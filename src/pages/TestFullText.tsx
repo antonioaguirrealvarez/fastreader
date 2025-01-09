@@ -85,7 +85,7 @@ export function TestFullText() {
   }, [user?.id, fileId]);
 
   const handleBackToLibrary = () => {
-    navigate('/');
+    navigate('/library');
   };
 
   if (isLoading) {
