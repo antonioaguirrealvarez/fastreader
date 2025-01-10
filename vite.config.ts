@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
+    base: '/',
     plugins: [react()],
     resolve: {
       alias: {
@@ -20,9 +21,6 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       sourcemap: true,
-      outDir: 'dist',
-      assetsDir: 'assets',
-      emptyOutDir: true,
       rollupOptions: {
         output: {
           manualChunks: {
