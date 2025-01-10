@@ -1,17 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, getRedirectUrl } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
-import { settingsService } from '../services/database/settings';
-
-// Get the base URL for redirects based on environment
-const getRedirectUrl = () => {
-  // In development, use localhost
-  if (import.meta.env.DEV) {
-    return 'http://localhost:5173';
-  }
-  // In production, use the actual origin
-  return window.location.origin;
-};
 
 interface AuthContextType {
   user: User | null;
@@ -52,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${getRedirectUrl()}/auth/callback`
+          redirectTo: getRedirectUrl('auth')
         }
       });
 
@@ -73,28 +62,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string) => {
-    try {
-      const { data: { user }, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (user) {
-        // Initialize user settings
-        await settingsService.initializeUserSettings(user.id);
-      }
-
-      return { user, error: null };
-    } catch (error) {
-      return { user: null, error };
-    }
-  };
-
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -104,10 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-} 
+}; 
