@@ -1,9 +1,18 @@
 {
-  "version": 2,
-  "framework": null,
-  "buildCommand": "node vercel-build.js",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
   ]
 } 
