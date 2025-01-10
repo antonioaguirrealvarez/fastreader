@@ -45,7 +45,7 @@ export function Reader() {
   } = useSettingsStore();
 
   // Reader store for file info
-  const { fileId, fileName, currentMode } = useReaderStore();
+  const { fileId, fileName, currentMode, content } = useReaderStore();
 
   // Redirect if no file info
   useEffect(() => {
@@ -109,7 +109,7 @@ export function Reader() {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const words = locationContent?.split(/\s+/) || [];
+  const [words, setWords] = useState(locationContent?.split(/\s+/) || []);
 
   const hasInitialized = useRef(false);
 
@@ -145,6 +145,36 @@ export function Reader() {
 
     initializeReaderProgress();
   }, [user?.id, fileId, locationContent]);
+
+  // Add this effect to update words and progress when content changes
+  useEffect(() => {
+    if (content && user?.id && fileId) {
+      const newWords = content.split(/\s+/);
+      setWords(newWords);
+      
+      // Load saved progress
+      progressService.getProgress(user.id, fileId)
+        .then(savedProgress => {
+          if (savedProgress) {
+            setCurrentWordIndex(savedProgress.current_word);
+            loggingCore.log(LogCategory.PROGRESS, 'progress_loaded_rsvp', {
+              currentWord: savedProgress.current_word,
+              totalWords: newWords.length
+            });
+          } else {
+            setCurrentWordIndex(0);
+          }
+        })
+        .catch(error => {
+          loggingCore.log(LogCategory.ERROR, 'progress_load_failed_rsvp', {
+            error,
+            userId: user.id,
+            fileId
+          });
+          setCurrentWordIndex(0);
+        });
+    }
+  }, [content, user?.id, fileId]);
 
   const handleSpeedChange = (speed: number) => {
     setWordsPerMinute(Math.max(100, Math.min(1000, speed)));
