@@ -708,12 +708,12 @@ export function FullTextReader({
           {autoScroll.isEnabled ? (
             <>
               <Lock className="h-4 w-4" />
-              <span>Auto-scroll</span>
+              <span className="hidden sm:inline">Auto-scroll</span>
             </>
           ) : (
             <>
               <Unlock className="h-4 w-4" />
-              <span>Auto-scroll</span>
+              <span className="hidden sm:inline">Auto-scroll</span>
             </>
           )}
         </Button>

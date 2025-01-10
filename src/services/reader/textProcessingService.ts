@@ -115,9 +115,9 @@ export const useTextProcessing = create<TextProcessingState>((set, get) => ({
       case 'medium':
         return 'leading-[2.25]';
       case 'large':
-        return 'leading-[2.75]';
+        return 'leading-[3]';
       case 'extra-large':
-        return 'leading-[3.75]';
+        return 'leading-[5]';
       default:
         return 'leading-[2.25]';
     }
@@ -133,7 +133,7 @@ export const useTextProcessing = create<TextProcessingState>((set, get) => ({
       case 'large':
         return 'tracking-[0.075em] font-[350]';
       case 'extra-large':
-        return 'tracking-normal font-[350] px-[0.125em]';
+        return 'tracking-[0.05em] font-[350] px-[0.15em]';
       default:
         return 'tracking-wider font-[350]';
     }
