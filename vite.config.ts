@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       sourcemap: true,
+      outDir: 'dist',
+      assetsDir: 'assets',
+      emptyOutDir: true,
       rollupOptions: {
         output: {
           manualChunks: {
