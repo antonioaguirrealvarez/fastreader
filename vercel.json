@@ -1,9 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
+  "buildCommand": "npm install && npm run build",
   "outputDirectory": "dist",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
@@ -11,8 +9,7 @@
   "env": {
     "VITE_SUPABASE_URL": "https://diaevjkiwvxchirtvpsu.supabase.co",
     "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpYWV2amtpd3Z4Y2hpcnR2cHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mjk3MjU4NTEsImV4cCI6MjA0NTMwMTg1MX0.uvX8CVPzBfQvcEMmH3RW-_EAbHxlwcnpZp16BQUgMx0",
-    "NODE_ENV": "production",
-    "DEBUG": "*"
+    "NODE_ENV": "production"
   },
   "headers": [
     {
@@ -20,12 +17,6 @@
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
-    }
-  ],
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/node"
     }
   ]
 } 
