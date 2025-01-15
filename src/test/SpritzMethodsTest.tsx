@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { loggerService } from '../services/loggerService';
+import { loggingCore, LogCategory } from '../services/logging/core';
 
 type SpritzMethod = 
   | 'fixed-middle' 
@@ -376,18 +376,13 @@ export function SpritzMethodsTest() {
 
   const renderWord = (before: string, focus: string, after: string, totalLength: number) => {
     // Log the analysis
-    loggerService.analyzeSpritzWord(before + focus + after, {
+    loggingCore.log(LogCategory.DISPLAY, 'word_analysis', {
+      word: before + focus + after,
       method,
       beforeLength: before.length,
-      focusPosition: before.length,
-      totalLength,
-      focusLetter: focus,
-      metrics: {
-        containerWidth,
-        beforeWidth: before.length * 14, // approximate character width
-        focusWidth: 14,
-        afterWidth: after.length * 14
-      }
+      focusLength: focus.length,
+      afterLength: after.length,
+      totalLength
     });
 
     return (
