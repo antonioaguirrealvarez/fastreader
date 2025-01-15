@@ -3,11 +3,13 @@ import { loggingCore, LogCategory } from '../logging/core';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const redirectUrl = import.meta.env.VITE_REDIRECT_URL;
 
 // Log configuration on initialization
 loggingCore.log(LogCategory.DEBUG, 'supabase_config_init', {
   url: supabaseUrl,
   hasKey: !!supabaseKey,
+  redirectUrl,
   environment: import.meta.env.MODE
 });
 
@@ -20,16 +22,24 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+    storage: window.localStorage
   }
 });
 
-// Set up auth state change listener
+// Set up auth state change listener with redirect handling
 supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
   loggingCore.log(LogCategory.DEBUG, 'auth_state_changed', {
     event,
-    userId: session?.user?.id
+    userId: session?.user?.id,
+    redirectUrl,
+    currentPath: window.location.pathname
   });
+
+  if (event === 'SIGNED_IN' && window.location.pathname === '/auth/callback') {
+    window.location.href = redirectUrl;
+  }
 });
 
 // Export types

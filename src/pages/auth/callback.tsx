@@ -1,32 +1,57 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../services/supabase/config';
+import { loggingCore, LogCategory } from '../../services/logging/core';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const redirectUrl = import.meta.env.VITE_REDIRECT_URL;
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // First check if we have a session from the URL
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error) throw error;
-        
-        if (session) {
-          // Redirect to library page after successful authentication
-          navigate('/library', { replace: true });
-        } else {
-          // If no session, redirect to home
-          navigate('/', { replace: true });
+        if (sessionError) {
+          loggingCore.log(LogCategory.ERROR, 'auth_callback_session_error', { error: sessionError });
+          throw sessionError;
         }
+
+        // If we have a session, redirect to library
+        if (session) {
+          loggingCore.log(LogCategory.DEBUG, 'auth_callback_success', {
+            userId: session.user.id,
+            redirectUrl
+          });
+          
+          // Use window.location for hard redirect to ensure clean state
+          window.location.href = redirectUrl;
+          return;
+        }
+
+        // If no session, try to exchange the auth code
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.search);
+        
+        if (exchangeError) {
+          loggingCore.log(LogCategory.ERROR, 'auth_callback_exchange_error', { error: exchangeError });
+          throw exchangeError;
+        }
+
+        // After successful exchange, redirect
+        window.location.href = redirectUrl;
       } catch (error) {
-        console.error('Error handling auth callback:', error);
+        loggingCore.log(LogCategory.ERROR, 'auth_callback_error', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          search: window.location.search,
+          hash: window.location.hash
+        });
         navigate('/', { replace: true });
       }
     };
 
     handleCallback();
-  }, [navigate]);
+  }, [navigate, redirectUrl]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">
