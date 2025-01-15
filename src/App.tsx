@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { DynamicHero } from './components/DynamicHero';
 import { DemoReader } from './components/DemoReader';
@@ -7,19 +7,24 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PageBackground } from './components/ui/PageBackground';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { supabase } from './services/supabase/config';
 import { FileConversionTest } from './test/FileConversionTest';
 import { SupabaseTableTest } from './test/SupabaseTableTest';
 import { GroqTest } from './test/GroqTest';
 import { Reader } from './pages/Reader';
 import { Library } from './pages/Library';
 import { AddBook } from './pages/AddBook';
-import { SupabaseTest } from './test/SupabaseTest';
 import { ApiTest } from './test/ApiTest';
 import { UploadTest } from './test/UploadTest';
 import { SpritzTest } from './test/SpritzTest';
 import FullTextDemo from './pages/FullTextDemo';
 import { TestFullText } from './pages/TestFullText';
+import { authService } from './services/supabase/auth.service';
+import { loggingCore, LogCategory } from './services/logging/core';
+
+// Lazy load the SupabaseTest component
+const SupabaseTest = lazy(() => import('./test/SupabaseTest').then(module => ({
+  default: module.SupabaseTest
+})));
 
 function HomePage() {
   return (
@@ -49,14 +54,11 @@ function AuthCallback() {
   useEffect(() => {
     const handleAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          navigate('/library', { replace: true });
-        } else {
-          navigate('/', { replace: true });
-        }
+        await authService.handleRedirect();
       } catch (error) {
-        console.error('Auth callback error:', error);
+        loggingCore.log(LogCategory.ERROR, 'auth_callback_failed', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
         navigate('/', { replace: true });
       }
     };
@@ -92,7 +94,16 @@ export default function App() {
                 <AddBook />
               </ProtectedRoute>
             } />
-            <Route path="/test/supabase" element={<SupabaseTest />} />
+            {/* Lazy load SupabaseTest with Suspense */}
+            <Route path="/test/supabase" element={
+              <Suspense fallback={
+                <div className="min-h-screen flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+              }>
+                <SupabaseTest />
+              </Suspense>
+            } />
             <Route path="/test/api" element={<ApiTest />} />
             <Route path="/test/upload" element={<UploadTest />} />
             <Route path="/test/spritz" element={<SpritzTest />} />

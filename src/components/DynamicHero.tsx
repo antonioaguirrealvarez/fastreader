@@ -3,7 +3,7 @@ import { Button } from './ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 
-const motto = ['Read', 'Smarter,', 'Learn', 'Faster'];
+const motto = ['Learn', 'like', 'Spencer'];
 
 export function DynamicHero() {
   const { user, signInWithGoogle } = useAuth();
@@ -92,9 +92,9 @@ export function DynamicHero() {
                   transition={{ duration: 0.5 }}
                   className="flex flex-col"
                 >
-                  Read Smarter,{' '}
+                  Learn like{' '}
                   <span className="animate-gradient bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent bg-[length:200%_auto]">
-                    Learn Faster
+                    Spencer
                   </span>
                 </motion.span>
               )}

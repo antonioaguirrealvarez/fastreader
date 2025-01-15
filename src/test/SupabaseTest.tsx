@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Banner } from '../components/ui/Banner';
-import { SupabaseDebug } from '../components/SupabaseDebug';
 import { supabase } from '../services/supabase/config';
+import { authService } from '../services/supabase/auth.service';
+import { loggingCore, LogCategory, LogLevel } from '../services/logging/core';
 
 // Test item interface
 interface TestItem {
@@ -21,9 +21,6 @@ interface ProtectedItem {
   user_id: string;
   content: string;
 }
-
-// At the top of the file, add console.log to debug environment variables
-console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
 
 export function SupabaseTest() {
   const [connectionStatus, setConnectionStatus] = useState<'untested' | 'success' | 'error'>('untested');
@@ -43,20 +40,21 @@ export function SupabaseTest() {
 
   // Test 1: Connection Test
   const testConnection = async () => {
+    const operationId = crypto.randomUUID();
     try {
-      if (!supabase.url || !supabase.anonKey) {
-        throw new Error('Missing Supabase configuration. Check .env.local file.');
-      }
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_connection',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
 
-      // First test basic connection
       const { error: pingError } = await supabase.from('test_table').select('count');
       
       if (pingError) {
-        // Check if it's a connection error
         if (pingError.message.includes('connection refused')) {
           throw new Error('Could not connect to Supabase. Please check if the URL is correct and the service is available.');
         }
-        // Check if it's a table not found error
         if (pingError.message.includes('relation "test_table" does not exist')) {
           throw new Error('Connected to Supabase, but test_table does not exist. Please run the setup SQL.');
         }
@@ -65,16 +63,31 @@ export function SupabaseTest() {
 
       setConnectionStatus('success');
       updateTestResult('connection', 'success', 'Successfully connected to Supabase');
-    } catch (error: any) {
+      
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_connection', operationId, {
+        status: 'success'
+      });
+    } catch (error) {
       setConnectionStatus('error');
-      updateTestResult('connection', 'error', `Connection failed: ${error.message}`);
-      console.error('Supabase connection error:', error);
+      updateTestResult('connection', 'error', `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_connection_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Test 2: Read Table
   const testReadTable = async () => {
+    const operationId = crypto.randomUUID();
     try {
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_read_table',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
       const { data, error } = await supabase
         .from('test_table')
         .select('*');
@@ -83,14 +96,30 @@ export function SupabaseTest() {
       
       setTestItems(data);
       updateTestResult('read', 'success', `Successfully read ${data.length} items`);
+      
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_read_table', operationId, {
+        itemCount: data.length
+      });
     } catch (error) {
-      updateTestResult('read', 'error', `Failed to read table: ${error.message}`);
+      updateTestResult('read', 'error', `Failed to read table: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_read_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Test 3: CRUD Operations
   const testCRUD = async () => {
+    const operationId = crypto.randomUUID();
     try {
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_crud',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
       // Create
       const { data: insertData, error: insertError } = await supabase
         .from('test_table')
@@ -130,33 +159,58 @@ export function SupabaseTest() {
         // Refresh table display after delete
         await testReadTable();
       }
+
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_crud', operationId, {
+        success: true
+      });
     } catch (error) {
       updateTestResult('crud', 'error', `CRUD operations failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_crud_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Test 4: Authentication
   const testAuth = async () => {
+    const operationId = crypto.randomUUID();
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'test@example.com',
-        password: 'testpassword123'
-      });
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_auth',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
 
-      if (error) throw error;
+      const data = await authService.signInWithEmail('test@example.com', 'testpassword123');
       setUser(data.user);
       updateTestResult('auth', 'success', 'Successfully authenticated');
+      
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_auth', operationId, {
+        success: true
+      });
     } catch (error) {
-      updateTestResult('auth', 'error', `Authentication failed: ${error.message}`);
+      updateTestResult('auth', 'error', `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_auth_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Test 5: Session Management
   const testSession = async () => {
+    const operationId = crypto.randomUUID();
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) throw error;
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_session',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
+      const session = await authService.getSession();
       
       if (session) {
         setSessionStatus('Active session found');
@@ -165,8 +219,16 @@ export function SupabaseTest() {
         setSessionStatus('No active session');
         updateTestResult('session', 'warning', 'No active session found');
       }
+
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_session', operationId, {
+        hasSession: !!session
+      });
     } catch (error) {
-      updateTestResult('session', 'error', `Session check failed: ${error.message}`);
+      updateTestResult('session', 'error', `Session check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_session_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
@@ -177,7 +239,15 @@ export function SupabaseTest() {
       return;
     }
 
+    const operationId = crypto.randomUUID();
     try {
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_protected_crud',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
       // Create protected item
       const { data: insertData, error: insertError } = await supabase
         .from('protected_table')
@@ -209,60 +279,92 @@ export function SupabaseTest() {
         if (deleteError) throw deleteError;
         updateTestResult('protected_delete', 'success', 'Deleted protected item');
       }
+
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_protected_crud', operationId, {
+        success: true
+      });
     } catch (error) {
-      updateTestResult('protected', 'error', `Protected operations failed: ${error.message}`);
+      updateTestResult('protected', 'error', `Protected operations failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_protected_crud_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Add OAuth sign in function
   const signInWithGoogle = async () => {
+    const operationId = crypto.randomUUID();
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/test/supabase`
-        }
-      });
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_google_signin',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
+      await authService.signInWithProvider('google');
       
-      if (error) throw error;
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_google_signin', operationId, {
+        success: true
+      });
     } catch (error) {
       updateTestResult('auth', 'error', `Google sign in failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_google_signin_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
   // Add sign out function
   const signOut = async () => {
+    const operationId = crypto.randomUUID();
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      loggingCore.startOperation(
+        LogCategory.DEBUG,
+        'test_signout',
+        {},
+        { level: LogLevel.DEBUG, category: LogCategory.DEBUG }
+      );
+
+      await authService.signOut();
       setUser(null);
       updateTestResult('auth', 'success', 'Successfully signed out');
+      
+      loggingCore.endOperation(LogCategory.DEBUG, 'test_signout', operationId, {
+        success: true
+      });
     } catch (error) {
       updateTestResult('auth', 'error', `Sign out failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      loggingCore.log(LogCategory.ERROR, 'test_signout_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   };
 
-  // Run initial connection test
+  // Run initial connection test and set up auth state listener
   useEffect(() => {
     testConnection();
     
     // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
+    const unsubscribe = authService.onAuthStateChange((newUser) => {
+      setUser(newUser);
+      if (newUser) {
         updateTestResult('auth', 'success', 'Successfully authenticated');
       }
     });
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
+  // Rest of your component JSX...
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <h1 className="text-3xl font-bold mb-8">Supabase Integration Tests</h1>
-      <SupabaseDebug />
 
       {/* Auth Status */}
       <Card className="mb-8 p-6">
