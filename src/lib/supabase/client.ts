@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { Database } from '../../types/supabase';
+import { createClient, SupabaseClient as BaseSupabaseClient } from '@supabase/supabase-js';
+import { Database, ProgressData, SettingsData, StoredFile, LibraryFile, FileMetadata } from '../../types/supabase';
 import { loggingCore, LogCategory } from '../../services/logging/core';
 
 export class SupabaseError extends Error {
@@ -15,7 +15,7 @@ export class SupabaseError extends Error {
 
 class SupabaseClient {
   private static instance: SupabaseClient;
-  private client: ReturnType<typeof createClient<Database>>;
+  private client: BaseSupabaseClient<Database>;
   private readonly MAX_RETRIES = 3;
   private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id'> = {
     dark_mode: true,
@@ -35,8 +35,22 @@ class SupabaseClient {
     if (!url || !key) {
       throw new Error('Missing Supabase configuration');
     }
+
+    loggingCore.log(LogCategory.DEBUG, 'supabase_client_init', {
+      url,
+      hasKey: !!key,
+      environment: import.meta.env.MODE
+    });
     
-    this.client = createClient<Database>(url, key);
+    this.client = createClient<Database>(url, key, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        storage: localStorage,
+        storageKey: 'fastreader-auth-token'
+      }
+    });
   }
 
   static getInstance() {
@@ -44,6 +58,53 @@ class SupabaseClient {
       SupabaseClient.instance = new SupabaseClient();
     }
     return SupabaseClient.instance;
+  }
+
+  // Database Methods
+  from<T extends keyof Database['public']['Tables']>(table: T) {
+    return this.client.from(table);
+  }
+
+  // Auth Methods
+  async signInWithGoogle() {
+    const { data, error } = await this.client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/library`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent'
+        }
+      }
+    });
+
+    if (error) {
+      loggingCore.log(LogCategory.ERROR, 'google_signin_failed', { error });
+      throw error;
+    }
+
+    return data;
+  }
+
+  async signOut() {
+    const { error } = await this.client.auth.signOut();
+    if (error) {
+      loggingCore.log(LogCategory.ERROR, 'signout_failed', { error });
+      throw error;
+    }
+  }
+
+  async getSession() {
+    const { data: { session }, error } = await this.client.auth.getSession();
+    if (error) {
+      loggingCore.log(LogCategory.ERROR, 'get_session_failed', { error });
+      throw error;
+    }
+    return session;
+  }
+
+  onAuthStateChange(callback: (event: string, session: any) => void) {
+    return this.client.auth.onAuthStateChange(callback);
   }
 
   private async handleRequest<T>(
@@ -80,7 +141,7 @@ class SupabaseClient {
   }
 
   // Progress Operations
-  async upsertProgress(data: ProgressData) {
+  async upsertProgress(data: Omit<ProgressData, 'id' | 'created_at' | 'updated_at'>) {
     return this.handleRequest('progress_update', async () => {
       // First check if record exists
       const { data: existing } = await this.client

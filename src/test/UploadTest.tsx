@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { createClient, User } from '@supabase/supabase-js';
+import React, { useState, useRef, useEffect, lazy } from 'react';
+import { AuthError, Session, User, Subscription } from '@supabase/supabase-js';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { supabase } from '../services/supabase/config';
+import { supabase } from '../lib/supabase/client';
+import { loggingCore, LogCategory } from '../services/logging/core';
 
 interface UploadedFile {
   id: string;
@@ -52,16 +53,28 @@ export function UploadTest() {
 
   useEffect(() => {
     // Check current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    const checkSession = async () => {
+      try {
+        const session = await supabase.getSession();
+        setUser(session?.user ?? null);
+        loggingCore.log(LogCategory.DEBUG, 'session_check', { userId: session?.user?.id });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        loggingCore.log(LogCategory.ERROR, 'session_check_failed', { error: message });
+      }
+    };
+
+    checkSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const subscription = supabase.onAuthStateChange((event: string, session: Session | null) => {
       setUser(session?.user ?? null);
+      loggingCore.log(LogCategory.DEBUG, 'auth_state_changed', { event, userId: session?.user?.id });
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const addTestResult = (result: TestResult) => {
@@ -296,40 +309,27 @@ export function UploadTest() {
     });
   };
 
+  // Update auth methods
   const signInWithGoogle = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/test/upload`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent'
-          }
-        }
-      });
-
-      if (error) throw error;
-      console.log('Sign in initiated:', data);
-    } catch (error) {
-      console.error('Sign in error:', error);
-      addTestResult({ 
-        type: 'error', 
-        message: `Failed to sign in: ${error instanceof Error ? error.message : 'Unknown error'}` 
-      });
+      await supabase.signInWithGoogle();
+      loggingCore.log(LogCategory.DEBUG, 'google_signin_initiated');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      loggingCore.log(LogCategory.ERROR, 'google_signin_failed', { error: message });
+      throw new Error(`Sign in failed: ${message}`);
     }
   };
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await supabase.signOut();
       setUser(null);
-    } catch (error) {
-      addTestResult({ 
-        type: 'error', 
-        message: `Failed to sign out: ${error instanceof Error ? error.message : 'Unknown error'}` 
-      });
+      loggingCore.log(LogCategory.DEBUG, 'signout_success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      loggingCore.log(LogCategory.ERROR, 'signout_failed', { error: message });
+      throw new Error(`Sign out failed: ${message}`);
     }
   };
 
@@ -447,6 +447,26 @@ export function UploadTest() {
       setSupabaseFiles([]); // Reset when not authenticated
     }
   }, [user]);
+
+  // Update file upload methods to use the client's storage methods
+  const handleFileUpload = async (file: File, path: string) => {
+    try {
+      const { data, error } = await supabase.from('uploads').upload(path, file, {
+        upsert: true,
+        cacheControl: '3600'
+      });
+
+      if (error) throw error;
+
+      const { data: publicUrl } = await supabase.from('uploads').getPublicUrl(data.path);
+
+      return { data, publicUrl: publicUrl.publicUrl };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      loggingCore.log(LogCategory.ERROR, 'file_upload_failed', { error: message, path });
+      throw new Error(`Upload failed: ${message}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">

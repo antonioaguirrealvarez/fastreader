@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
-import { settingsService } from '../services/database/settings';
+import { supabase } from '../lib/supabase/client';
+import { loggingCore, LogCategory } from '../services/logging/core';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -19,16 +20,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    const initializeAuth = async () => {
+      try {
+        const session = await supabase.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        loggingCore.log(LogCategory.DEBUG, 'auth_initialized', {
+          userId: session?.user?.id,
+          event: 'INITIAL_SESSION'
+        });
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'auth_initialization_failed', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+
+      loggingCore.log(LogCategory.DEBUG, 'auth_state_changed', {
+        event,
+        userId: session?.user?.id
+      });
     });
 
     return () => subscription.unsubscribe();
@@ -36,60 +57,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          redirectTo: window.location.origin
-        }
-      });
-
-      if (error) throw error;
+      await supabase.signInWithGoogle();
     } catch (error) {
-      console.error('Error signing in with Google:', error);
+      loggingCore.log(LogCategory.ERROR, 'google_signin_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       throw error;
     }
   };
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await supabase.signOut();
     } catch (error) {
-      console.error('Error signing out:', error);
+      loggingCore.log(LogCategory.ERROR, 'signout_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       throw error;
     }
   };
 
-  const signUp = async (email: string, password: string) => {
-    try {
-      const { data: { user }, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (user) {
-        // Initialize user settings
-        await settingsService.initializeUserSettings(user.id);
-      }
-
-      return { user, error: null };
-    } catch (error) {
-      return { user: null, error };
-    }
-  };
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
   return (
-    <AuthContext.Provider value={{ user, session, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );

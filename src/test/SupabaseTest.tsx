@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { AuthError, Session, User } from '@supabase/supabase-js';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Banner } from '../components/ui/Banner';
 import { SupabaseDebug } from '../components/SupabaseDebug';
-import { supabase } from '../services/supabase/config';
+import { supabase } from '../lib/supabase/client';
+import { loggingCore, LogCategory } from '../services/logging/core';
 
 // Test item interface
 interface TestItem {
@@ -22,8 +22,11 @@ interface ProtectedItem {
   content: string;
 }
 
-// At the top of the file, add console.log to debug environment variables
-console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+// Test result interface
+interface TestResult {
+  status: 'success' | 'error' | 'warning';
+  message: string;
+}
 
 export function SupabaseTest() {
   const [connectionStatus, setConnectionStatus] = useState<'untested' | 'success' | 'error'>('untested');
@@ -31,25 +34,31 @@ export function SupabaseTest() {
   const [protectedItems, setProtectedItems] = useState<ProtectedItem[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string>('Not checked');
-  const [testResults, setTestResults] = useState<{[key: string]: {status: string, message: string}}>({});
+  const [testResults, setTestResults] = useState<{[key: string]: TestResult}>({});
 
   // Helper function to update test results
-  const updateTestResult = (testName: string, status: string, message: string) => {
+  const updateTestResult = (testName: string, status: TestResult['status'], message: string) => {
     setTestResults(prev => ({
       ...prev,
       [testName]: { status, message }
     }));
+
+    // Log test result
+    loggingCore.log(LogCategory.DEBUG, 'supabase_test_result', {
+      test: testName,
+      status,
+      message,
+      timestamp: new Date().toISOString()
+    });
   };
 
   // Test 1: Connection Test
   const testConnection = async () => {
     try {
-      if (!supabase.url || !supabase.anonKey) {
-        throw new Error('Missing Supabase configuration. Check .env.local file.');
-      }
-
       // First test basic connection
-      const { error: pingError } = await supabase.from('test_table').select('count');
+      const { error: pingError } = await supabase
+        .from('test_table')
+        .select('count');
       
       if (pingError) {
         // Check if it's a connection error
@@ -65,10 +74,14 @@ export function SupabaseTest() {
 
       setConnectionStatus('success');
       updateTestResult('connection', 'success', 'Successfully connected to Supabase');
-    } catch (error: any) {
+    } catch (error) {
       setConnectionStatus('error');
-      updateTestResult('connection', 'error', `Connection failed: ${error.message}`);
-      console.error('Supabase connection error:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('connection', 'error', `Connection failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_connection_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
@@ -81,10 +94,15 @@ export function SupabaseTest() {
       
       if (error) throw error;
       
-      setTestItems(data);
-      updateTestResult('read', 'success', `Successfully read ${data.length} items`);
+      setTestItems(data || []);
+      updateTestResult('read', 'success', `Successfully read ${data?.length || 0} items`);
     } catch (error) {
-      updateTestResult('read', 'error', `Failed to read table: ${error.message}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('read', 'error', `Failed to read table: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_read_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
@@ -131,46 +149,45 @@ export function SupabaseTest() {
         await testReadTable();
       }
     } catch (error) {
-      updateTestResult('crud', 'error', `CRUD operations failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  // Test 4: Authentication
-  const testAuth = async () => {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'test@example.com',
-        password: 'testpassword123'
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('crud', 'error', `CRUD operations failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_crud_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
       });
-
-      if (error) throw error;
-      setUser(data.user);
-      updateTestResult('auth', 'success', 'Successfully authenticated');
-    } catch (error) {
-      updateTestResult('auth', 'error', `Authentication failed: ${error.message}`);
     }
   };
 
-  // Test 5: Session Management
+  // Test 4: Session Management
   const testSession = async () => {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) throw error;
+      const session = await supabase.getSession();
       
       if (session) {
         setSessionStatus('Active session found');
         updateTestResult('session', 'success', 'Active session found');
+        loggingCore.log(LogCategory.DEBUG, 'supabase_test_session_found', {
+          userId: session.user?.id,
+          timestamp: new Date().toISOString()
+        });
       } else {
         setSessionStatus('No active session');
         updateTestResult('session', 'warning', 'No active session found');
+        loggingCore.log(LogCategory.DEBUG, 'supabase_test_no_session', {
+          timestamp: new Date().toISOString()
+        });
       }
     } catch (error) {
-      updateTestResult('session', 'error', `Session check failed: ${error.message}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('session', 'error', `Session check failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_session_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
-  // Test 6: Protected CRUD Operations
+  // Test 5: Protected CRUD Operations
   const testProtectedCRUD = async () => {
     if (!user) {
       updateTestResult('protected', 'error', 'Must be authenticated for protected operations');
@@ -196,8 +213,8 @@ export function SupabaseTest() {
         .eq('user_id', user.id);
       
       if (readError) throw readError;
-      setProtectedItems(readData);
-      updateTestResult('protected_read', 'success', `Read ${readData.length} protected items`);
+      setProtectedItems(readData || []);
+      updateTestResult('protected_read', 'success', `Read ${readData?.length || 0} protected items`);
 
       // Cleanup
       if (insertData?.[0]?.id) {
@@ -210,47 +227,63 @@ export function SupabaseTest() {
         updateTestResult('protected_delete', 'success', 'Deleted protected item');
       }
     } catch (error) {
-      updateTestResult('protected', 'error', `Protected operations failed: ${error.message}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('protected', 'error', `Protected operations failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_protected_failed', { 
+        error: message,
+        userId: user.id,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
   // Add OAuth sign in function
   const signInWithGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/test/supabase`
-        }
+      await supabase.signInWithGoogle();
+      loggingCore.log(LogCategory.DEBUG, 'supabase_test_google_signin_initiated', {
+        timestamp: new Date().toISOString()
       });
-      
-      if (error) throw error;
     } catch (error) {
-      updateTestResult('auth', 'error', `Google sign in failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('auth', 'error', `Google sign in failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_google_signin_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
   // Add sign out function
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await supabase.signOut();
       setUser(null);
       updateTestResult('auth', 'success', 'Successfully signed out');
+      loggingCore.log(LogCategory.DEBUG, 'supabase_test_signout_success', {
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
-      updateTestResult('auth', 'error', `Sign out failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateTestResult('auth', 'error', `Sign out failed: ${message}`);
+      loggingCore.log(LogCategory.ERROR, 'supabase_test_signout_failed', { 
+        error: message,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
-  // Run initial connection test
+  // Set up auth state listener
   useEffect(() => {
-    testConnection();
-    
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.onAuthStateChange((event: string, session: Session | null) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         updateTestResult('auth', 'success', 'Successfully authenticated');
+        loggingCore.log(LogCategory.DEBUG, 'supabase_test_auth_state_changed', {
+          event,
+          userId: session.user.id,
+          timestamp: new Date().toISOString()
+        });
       }
     });
 
@@ -309,9 +342,6 @@ export function SupabaseTest() {
                 </svg>
                 Sign in with Google
               </Button>
-              <Button onClick={testAuth} variant="secondary">
-                Test Email Auth
-              </Button>
             </div>
           </div>
         )}
@@ -332,6 +362,7 @@ export function SupabaseTest() {
 
       {/* Test Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <Button onClick={testConnection}>Test Connection</Button>
         <Button onClick={testReadTable}>Test Read Table</Button>
         <Button onClick={testCRUD}>Test CRUD Operations</Button>
         <Button onClick={testSession}>Test Session</Button>

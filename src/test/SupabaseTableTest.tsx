@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase/client';
+import { loggingCore, LogCategory } from '../services/logging/core';
 
 interface TestResult {
   operation: string;
