@@ -1,6 +1,10 @@
 import { loggingCore, LogCategory } from '../../logging/core';
 import { ProcessingOptions } from '../../documentProcessing/types';
 import * as pdfjs from 'pdfjs-dist';
+import { GlobalWorkerOptions } from 'pdfjs-dist/build/pdf';
+
+// Initialize PDF.js worker
+GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export class PdfExtractor {
   async extract(

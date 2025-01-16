@@ -1,6 +1,10 @@
 import { Extractor, ExtractionResult, ExtractionOptions } from '../types';
 import * as pdfjsLib from 'pdfjs-dist';
+import { GlobalWorkerOptions } from 'pdfjs-dist/build/pdf';
 import { processPageContent } from './utils';
+
+// Initialize PDF.js worker
+GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 export class PDFHeavyExtractor implements Extractor {
   name = 'pdf-heavy';

@@ -7,17 +7,10 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PageBackground } from './components/ui/PageBackground';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { supabase } from './services/supabase/config';
-import { FileConversionTest } from './test/FileConversionTest';
-import { SupabaseTableTest } from './test/SupabaseTableTest';
-import { GroqTest } from './test/GroqTest';
+import { supabase } from './lib/supabase/client';
 import { Reader } from './pages/Reader';
 import { Library } from './pages/Library';
 import { AddBook } from './pages/AddBook';
-import { SupabaseTest } from './test/SupabaseTest';
-import { ApiTest } from './test/ApiTest';
-import { UploadTest } from './test/UploadTest';
-import { SpritzTest } from './test/SpritzTest';
 import FullTextDemo from './pages/FullTextDemo';
 import { TestFullText } from './pages/TestFullText';
 
@@ -92,14 +85,7 @@ export default function App() {
                 <AddBook />
               </ProtectedRoute>
             } />
-            <Route path="/test/supabase" element={<SupabaseTest />} />
-            <Route path="/test/api" element={<ApiTest />} />
-            <Route path="/test/upload" element={<UploadTest />} />
-            <Route path="/test/spritz" element={<SpritzTest />} />
-            <Route path="/test/file-conversion" element={<FileConversionTest />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/supabase-test" element={<SupabaseTableTest />} />
-            <Route path="/test/groq" element={process.env.NODE_ENV === 'development' ? <GroqTest /> : <Navigate to="/" />} />
             <Route path="/test/full-text" element={<FullTextDemo />} />
             <Route path="/test/full-text-reader" element={<TestFullText />} />
           </Routes>

@@ -1,6 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
-import { Database } from '../../types/supabase';
+import { createClient, Session } from '@supabase/supabase-js';
+import { Database, ProgressData, SettingsData, FileMetadata, StoredFile } from '../../types/supabase';
 import { loggingCore, LogCategory } from '../../services/logging/core';
+
+// Add LibraryFile interface
+interface LibraryFile {
+  id: string;
+  name: string;
+  content: string;
+  timestamp: string;
+  metadata: any;
+  url: string;
+}
 
 export class SupabaseError extends Error {
   constructor(
@@ -36,7 +46,24 @@ class SupabaseClient {
       throw new Error('Missing Supabase configuration');
     }
     
-    this.client = createClient<Database>(url, key);
+    this.client = createClient<Database>(url, key, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        storage: {
+          getItem: (key) => globalThis?.localStorage?.getItem(key),
+          setItem: (key, value) => globalThis?.localStorage?.setItem(key, value),
+          removeItem: (key) => globalThis?.localStorage?.removeItem(key),
+        }
+      }
+    });
+  }
+
+  // Expose auth property safely
+  get auth() {
+    return this.client.auth;
   }
 
   static getInstance() {
@@ -77,6 +104,57 @@ class SupabaseClient {
         supabaseError.details
       );
     }
+  }
+
+  // Auth Methods
+  async signInWithGoogle() {
+    return this.handleRequest('auth_google_signin', async () => {
+      const { data, error } = await this.client.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: this.getRedirectUrl('auth')
+        }
+      });
+      if (error) throw error;
+      return data;
+    });
+  }
+
+  async signOut() {
+    return this.handleRequest('auth_signout', async () => {
+      const { error } = await this.client.auth.signOut();
+      if (error) throw error;
+    });
+  }
+
+  async getSession() {
+    return this.handleRequest('auth_get_session', async () => {
+      const { data: { session }, error } = await this.client.auth.getSession();
+      if (error) throw error;
+      return session;
+    });
+  }
+
+  async getUser() {
+    return this.handleRequest('auth_get_user', async () => {
+      const { data: { user }, error } = await this.client.auth.getUser();
+      if (error) throw error;
+      return user;
+    });
+  }
+
+  onAuthStateChange(callback: (event: any, session: Session | null) => void) {
+    return this.client.auth.onAuthStateChange(callback);
+  }
+
+  private getRedirectUrl(type: 'auth' | 'post-auth' = 'auth') {
+    const baseUrl = import.meta.env.DEV 
+      ? 'http://localhost:5173' 
+      : window.location.origin;
+
+    return type === 'post-auth'
+      ? `${baseUrl}/library`
+      : `${baseUrl}/auth/callback`;
   }
 
   // Progress Operations
