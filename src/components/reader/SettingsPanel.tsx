@@ -62,10 +62,31 @@ export function SettingsPanel({
       mode
     });
     
-    // Navigate to appropriate route with content
-    navigate('/reader', {
-      state: { content }
-    });
+    // Navigate to appropriate route based on mode
+    if (mode === 'full-text') {
+      loggingCore.log(LogCategory.READING_STATE, 'navigating_to_full_text', {
+        route: '/test/full-text-reader',
+        fileId,
+        fileName,
+        operationId
+      });
+
+      // Use the standalone full-text reader route
+      navigate('/test/full-text-reader', { 
+        state: { 
+          content,
+          fileId,
+          fileName,
+          mode: 'full-text'
+        },
+        replace: true  // Replace current history entry to prevent back button issues
+      });
+    } else {
+      // Use the regular reader route for RSVP mode
+      navigate('/reader', {
+        state: { content }
+      });
+    }
 
     loggingCore.endOperation(
       LogCategory.READING_STATE,
@@ -75,7 +96,8 @@ export function SettingsPanel({
         success: true,
         mode,
         fileId,
-        fileName
+        fileName,
+        route: mode === 'full-text' ? '/test/full-text-reader' : '/reader'
       }
     );
   };
