@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { useNavigate } from 'react-router-dom';
 import { ReaderSettings } from '../../services/reader/readerSettingsService';
 import { useReaderStore } from '../../stores/readerStore';
+import { loggingCore, LogCategory } from '../../services/logging/core';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -23,18 +24,33 @@ export function SettingsPanel({
   hideHeader
 }: SettingsPanelProps) {
   const navigate = useNavigate();
-  const { fileId } = useReaderStore();
 
   const handleModeChange = (mode: 'rsvp' | 'full-text') => {
+    // Get current state first
+    const currentState = useReaderStore.getState();
+    const { fileId, fileName, content, currentMode: fromMode } = currentState;
+
+    const operationId = loggingCore.startOperation(
+      LogCategory.READING_STATE,
+      'mode_change',
+      {
+        fromMode,
+        toMode: mode,
+        fileId,
+        timestamp: Date.now()
+      }
+    );
+
     // Close settings panel
     onClose();
     
-    // Get current state
-    const currentState = useReaderStore.getState();
-    const { fileId, fileName } = currentState;
-    
     if (!fileId || !fileName) {
-      console.error('Missing file information');
+      loggingCore.log(LogCategory.ERROR, 'mode_change_failed', {
+        error: 'Missing file information',
+        operationId,
+        fileId,
+        fileName
+      });
       return;
     }
 
@@ -42,17 +58,26 @@ export function SettingsPanel({
     useReaderStore.getState().setFileInfo({
       fileId,
       fileName,
+      content: content || undefined,
       mode
     });
     
     // Navigate to appropriate route with content
-    if (mode === 'rsvp') {
-      navigate('/reader', {
-        state: { content: currentState.content }
-      });
-    } else {
-      navigate('/test/full-text-reader');
-    }
+    navigate('/reader', {
+      state: { content }
+    });
+
+    loggingCore.endOperation(
+      LogCategory.READING_STATE,
+      'mode_change',
+      operationId,
+      {
+        success: true,
+        mode,
+        fileId,
+        fileName
+      }
+    );
   };
 
   // Determine current mode based on readerStore instead of route

@@ -37,12 +37,17 @@ export function FullTextReader({
   const navigate = useNavigate();
   const { fileId, fileName, currentMode } = useReaderStore();
 
-  // Redirect if no file info
+  // Log component initialization
   useEffect(() => {
-    if (!fileId || !fileName || currentMode !== 'full-text') {
-      navigate('/library');
-    }
-  }, [fileId, fileName, currentMode, navigate]);
+    loggingCore.log(LogCategory.READING_STATE, 'full_text_reader_init', {
+      fileId,
+      fileName,
+      currentMode,
+      initialWpm,
+      initialProgress,
+      timestamp: Date.now()
+    });
+  }, [fileId, fileName, currentMode, initialWpm, initialProgress]);
 
   // Services
   const { settings, updateSettings } = useReaderSettings();
@@ -62,37 +67,41 @@ export function FullTextReader({
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Combine initialization into a single effect
+  // Initialize text processing first
   useEffect(() => {
-    const initializeReader = async () => {
-      // Initialize text processing first
-      textProcessing.initialize(content);
-      
-      // Update settings
-      updateSettings({ darkMode });
-      textProcessing.setWpm(initialWpm);
-
-      // Set initial progress if provided
-      if (initialProgress > 0) {
-        textProcessing.setCurrentWordIndex(initialProgress);
+    const operationId = loggingCore.startOperation(
+      LogCategory.TEXT_PROCESSING,
+      'initialize_text_processing',
+      {
+        fileId,
+        fileName,
+        contentLength: content?.length,
+        mode: currentMode
       }
+    );
 
-      // Mark as initialized
-      setIsInitialized(true);
+    textProcessing.initialize(content);
+    
+    // Update settings
+    updateSettings({ darkMode });
+    textProcessing.setWpm(initialWpm);
 
-      loggingCore.log(LogCategory.READING_STATE, 'reader_initialized', {
+    // Set initial progress if provided
+    if (initialProgress > 0) {
+      textProcessing.setCurrentWordIndex(initialProgress);
+    }
+
+    loggingCore.endOperation(
+      LogCategory.TEXT_PROCESSING,
+      'initialize_text_processing',
+      operationId,
+      {
+        success: true,
         totalWords: textProcessing.totalWords,
         initialProgress,
         fileId
-      });
-    };
-
-    initializeReader();
-
-    // Cleanup
-    return () => {
-      setIsInitialized(false);
-    };
+      }
+    );
   }, [content, darkMode, initialWpm, initialProgress, fileId]);
 
   // Replace the existing progress update effect with this new one

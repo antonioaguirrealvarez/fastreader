@@ -14,6 +14,7 @@ import { LogLevel } from '../services/logging/types';
 import { LogCategory } from '../services/logging/core';
 import { loggingConfig, LoggingMode } from '../services/logging/config';
 import { settingsService } from '../services/database/settings';
+import { FullTextReader } from '../components/reader/FullTextReader';
 
 // Set logging mode once at the top level
 loggingConfig.setMode(
@@ -49,10 +50,23 @@ export function Reader() {
 
   // Redirect if no file info
   useEffect(() => {
-    if (!fileId || !fileName || currentMode !== 'rsvp') {
+    loggingCore.log(LogCategory.READING_STATE, 'reader_route_check', {
+      fileId,
+      fileName,
+      currentMode,
+      hasLocationContent: !!locationContent
+    });
+
+    if (!fileId || !fileName || !currentMode) {
+      loggingCore.log(LogCategory.READING_STATE, 'reader_redirect_to_library', {
+        reason: 'missing_required_info',
+        fileId,
+        fileName,
+        currentMode
+      });
       navigate('/library');
     }
-  }, [fileId, fileName, currentMode, navigate]);
+  }, [fileId, fileName, currentMode, navigate, locationContent]);
 
   // Load settings on mount
   useEffect(() => {
@@ -254,18 +268,28 @@ export function Reader() {
         />
 
         <main className="flex-1 flex items-center justify-center">
-          <WordDisplay 
-            word={words[currentWordIndex] || ''}
-            wordIndex={currentWordIndex}
-            totalWords={words.length}
-            userId={user?.id || ''}
-            fileId={fileId || ''}
-            wordsPerMinute={wordsPerMinute}
-            isPlaying={isPlaying}
-            settings={settings}
-            onWordChange={handleWordChange}
-            onTogglePlay={handleTogglePlay}
-          />
+          {currentMode === 'rsvp' ? (
+            <WordDisplay 
+              word={words[currentWordIndex] || ''}
+              wordIndex={currentWordIndex}
+              totalWords={words.length}
+              userId={user?.id || ''}
+              fileId={fileId || ''}
+              wordsPerMinute={wordsPerMinute}
+              isPlaying={isPlaying}
+              settings={settings}
+              onWordChange={handleWordChange}
+              onTogglePlay={handleTogglePlay}
+            />
+          ) : (
+            <FullTextReader
+              content={content || ''}
+              initialWpm={wordsPerMinute}
+              darkMode={settings?.darkMode}
+              onBackToLibrary={handleBackToLibrary}
+              initialProgress={currentWordIndex}
+            />
+          )}
         </main>
 
         <SettingsPanel
