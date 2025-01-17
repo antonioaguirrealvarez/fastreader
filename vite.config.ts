@@ -37,6 +37,14 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      // Ensure worker files are properly copied and bundled
+      worker: {
+        format: 'es',
+        plugins: []
+      }
+    },
+    optimizeDeps: {
+      exclude: ['pdfjs-dist/build/pdf.worker.min.js']
     },
     server: {
       port: 5173,

@@ -1,10 +1,7 @@
 import { loggingCore, LogCategory } from '../../logging/core';
 import { ProcessingOptions } from '../../documentProcessing/types';
-import * as pdfjs from 'pdfjs-dist';
-import { GlobalWorkerOptions } from 'pdfjs-dist/build/pdf';
-
-// Initialize PDF.js worker
-GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+import { initializePDFWorker } from '../../pdf/PDFService';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
 export class PdfExtractor {
   async extract(
@@ -15,6 +12,9 @@ export class PdfExtractor {
     const operationId = crypto.randomUUID();
 
     try {
+      // Initialize PDF.js worker
+      initializePDFWorker();
+
       loggingCore.startOperation(LogCategory.PDF_PROCESSING, 'extract', {
         filename: file.name,
         size: file.size,
@@ -23,7 +23,8 @@ export class PdfExtractor {
 
       // Load the PDF document
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument(arrayBuffer).promise;
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
 
       loggingCore.log(LogCategory.PDF_PROCESSING, 'document_loaded', {
         filename: file.name,
@@ -37,7 +38,7 @@ export class PdfExtractor {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         const text = content.items
-          .map(item => 'str' in item ? item.str : '')
+          .map((item: { str?: string }) => item.str || '')
           .join(' ');
         
         textContent.push(text);

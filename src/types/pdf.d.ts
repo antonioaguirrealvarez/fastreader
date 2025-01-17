@@ -1,25 +1,15 @@
-declare module 'pdfjs-dist/build/pdf' {
+declare module 'pdfjs-dist/build/pdf.mjs' {
   export * from 'pdfjs-dist';
-  export const GlobalWorkerOptions: {
-    workerSrc: string;
-  };
 }
 
-declare module 'pdfjs-dist' {
-  export interface TextItem {
-    str: string;
-    transform: number[];
-    width: number;
-    height: number;
-    dir: string;
-  }
+declare module 'pdfjs-dist/build/pdf.worker.min.mjs?url' {
+  const workerUrl: string;
+  export default workerUrl;
+}
 
-  export interface TextMarkedContent {
-    type: string;
-    items: TextItem[];
-  }
-
-  export interface TextContent {
-    items: (TextItem | TextMarkedContent)[];
+// Extend LogOptions interface to include operationId
+declare module '../../logging/core' {
+  interface LogOptions {
+    operationId?: string;
   }
 } 
