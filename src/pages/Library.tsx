@@ -59,17 +59,18 @@ export function Library() {
         setIsLoadingFiles(true);
         setIsLoadingProgress(true);
 
-        // Single settings initialization
+        // Initialize settings using the new method
         if (!isInitialized) {
-          await settingsService.initializeUserSettings(user.id);
-          await loadSettings(user.id);
+          const settings = await settingsService.ensureLibrarySettings(user.id);
+          // Settings are already cached, no need to load again
           
           if (!mounted) return;
 
           loggingCore.log(LogCategory.SETTINGS, 'settings_loaded_library', {
             userId: user.id,
             operationId,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            settingsId: settings.id
           });
         }
 

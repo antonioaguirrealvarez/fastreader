@@ -1,10 +1,11 @@
-import { supabase } from '../../lib/supabase/client';
+import { supabase, SupabaseError } from '../../lib/supabase/client';
 import { SettingsData } from '../../types/supabase';
 import { loggingCore, LogCategory } from '../logging/core';
 
 class SettingsService {
   private cache: Map<string, SettingsData> = new Map();
   private readonly SETTINGS_TIMEOUT = 3000; // 3 seconds timeout
+  private initializationInProgress: Map<string, Promise<void>> = new Map();
 
   private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id' | 'id'> = {
     dark_mode: true,
@@ -19,43 +20,70 @@ class SettingsService {
   private getDefaultSettings(userId: string): Omit<SettingsData, 'id'> {
     return {
       ...this.DEFAULT_SETTINGS,
-      user_id: userId,
-      words_per_minute: 300
+      user_id: userId
     };
   }
 
   async initializeUserSettings(userId: string): Promise<void> {
-    const operationId = crypto.randomUUID();
-    
-    loggingCore.log(LogCategory.SETTINGS, 'settings_init_started', {
-      userId,
-      operationId
-    });
-
-    try {
-      // Create settings with proper UUID fields
-      const defaultSettings = {
-        ...this.DEFAULT_SETTINGS,
-        id: userId,  // Use user's UUID as settings ID
-        user_id: userId,
-        words_per_minute: 300
-      };
-
-      await supabase.upsertSettings(defaultSettings);
-      
-      loggingCore.log(LogCategory.SETTINGS, 'settings_init_success', {
-        userId,
-        operationId
-      });
-    } catch (error) {
-      // Log error but continue with flow
-      loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
-        operationId
-      });
-      // Don't rethrow - allow flow to continue
+    // If initialization is already in progress for this user, wait for it
+    if (this.initializationInProgress.has(userId)) {
+        await this.initializationInProgress.get(userId);
+        return;
     }
+
+    const operationId = crypto.randomUUID();
+    const initPromise = (async () => {
+        try {
+            loggingCore.log(LogCategory.SETTINGS, 'settings_init_started', {
+                userId,
+                operationId
+            });
+
+            // First try to get existing settings
+            const existingSettings = await supabase.getSettings(userId);
+            
+            if (existingSettings) {
+                loggingCore.log(LogCategory.SETTINGS, 'settings_already_exist', {
+                    userId,
+                    operationId
+                });
+                return;
+            }
+
+            // Create settings with proper UUID
+            const settingsId = crypto.randomUUID();
+            const defaultSettings = {
+                ...this.DEFAULT_SETTINGS,
+                id: settingsId,
+                user_id: userId
+            };
+
+            await supabase.upsertSettings(defaultSettings);
+            
+            loggingCore.log(LogCategory.SETTINGS, 'settings_init_success', {
+                userId,
+                operationId,
+                settingsId
+            });
+        } catch (error) {
+            loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                userId,
+                operationId
+            });
+            
+            // Don't retry here - let the getSettings handle fallback
+        } finally {
+            // Clean up initialization state
+            this.initializationInProgress.delete(userId);
+        }
+    })();
+
+    // Store the promise
+    this.initializationInProgress.set(userId, initPromise);
+    
+    // Wait for initialization to complete
+    await initPromise;
   }
 
   async getSettings(userId: string): Promise<SettingsData> {
@@ -89,31 +117,51 @@ class SettingsService {
           return data;
         }
       } catch (error) {
-        loggingCore.log(LogCategory.ERROR, 'settings_fetch_timeout', {
+        loggingCore.log(LogCategory.ERROR, 'settings_fetch_error', {
           error: error instanceof Error ? error.message : 'Unknown error',
           userId,
           operationId
         });
       }
 
-      // 3. If no settings exist or timeout, create them asynchronously and return defaults
-      const defaultSettings = this.getDefaultSettings(userId);
+      // 3. If no settings exist or error, create new ones
+      const settingsId = crypto.randomUUID();
+      const defaultSettings = {
+        id: settingsId,
+        ...this.getDefaultSettings(userId)
+      };
       
-      // Try to create settings in background
-      this.createSettingsAsync(userId, operationId);
+      try {
+        const result = await supabase.upsertSettings(defaultSettings);
+        if (result) {
+          this.cache.set(userId, result);
+          loggingCore.log(LogCategory.SETTINGS, 'settings_created_success', {
+            userId,
+            operationId,
+            settingsId
+          });
+          return result;
+        }
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'settings_creation_failed', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          userId,
+          operationId
+        });
+      }
 
-      // Return defaults immediately with a temporary id
-      const tempSettings = {
+      // 4. If all else fails, return default settings with a new UUID
+      const fallbackSettings = {
         ...defaultSettings,
-        id: crypto.randomUUID()
+        id: crypto.randomUUID() // Always generate new UUID for fallback
       };
 
-      loggingCore.log(LogCategory.SETTINGS, 'settings_using_defaults', {
+      loggingCore.log(LogCategory.SETTINGS, 'using_fallback_settings', {
         userId,
         operationId,
-        reason: 'no_settings_found'
+        settingsId: fallbackSettings.id
       });
-      return tempSettings;
+      return fallbackSettings;
 
     } catch (error) {
       loggingCore.log(LogCategory.ERROR, 'settings_critical_error', {
@@ -122,32 +170,11 @@ class SettingsService {
         operationId
       });
       
-      // Return defaults on any error with a temporary id
+      // Return defaults with a new UUID as fallback
       return {
         ...this.getDefaultSettings(userId),
         id: crypto.randomUUID()
       };
-    }
-  }
-
-  private async createSettingsAsync(userId: string, operationId: string): Promise<void> {
-    try {
-      const defaultSettings = this.getDefaultSettings(userId);
-      const result = await supabase.upsertSettings(defaultSettings);
-      
-      if (result) {
-        this.cache.set(userId, result);
-        loggingCore.log(LogCategory.SETTINGS, 'settings_created_async', {
-          userId,
-          operationId
-        });
-      }
-    } catch (error) {
-      loggingCore.log(LogCategory.ERROR, 'settings_creation_failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
-        operationId
-      });
     }
   }
 
@@ -195,6 +222,84 @@ class SettingsService {
 
   clearCache(userId: string) {
     this.cache.delete(userId);
+  }
+
+  /**
+   * Ensures settings exist for a user, similar to book progress initialization.
+   * This is called when the library component mounts.
+   */
+  async ensureLibrarySettings(userId: string): Promise<SettingsData> {
+    const operationId = crypto.randomUUID();
+    
+    try {
+      // First, check if settings already exist
+      const existingSettings = await supabase.getSettings(userId);
+      
+      if (existingSettings) {
+        this.cache.set(userId, existingSettings);
+        loggingCore.log(LogCategory.SETTINGS, 'library_settings_exist', {
+          userId,
+          operationId
+        });
+        return existingSettings;
+      }
+
+      // If no settings exist, create new ones using user's ID
+      const defaultSettings = {
+        id: userId, // Use user's ID instead of random UUID
+        user_id: userId,
+        ...this.DEFAULT_SETTINGS,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        const result = await supabase.upsertSettings(defaultSettings);
+        
+        if (result) {
+          this.cache.set(userId, result);
+          loggingCore.log(LogCategory.SETTINGS, 'library_settings_created', {
+            userId,
+            operationId,
+            settingsId: result.id
+          });
+          return result;
+        }
+      } catch (error) {
+        // If we get a duplicate key error, try to fetch the settings again
+        if (error instanceof SupabaseError && error.code === '23505') {
+          const retrySettings = await supabase.getSettings(userId);
+          if (retrySettings) {
+            this.cache.set(userId, retrySettings);
+            return retrySettings;
+          }
+        }
+        throw error;
+      }
+
+      // If creation failed, return default settings
+      loggingCore.log(LogCategory.ERROR, 'library_settings_creation_failed', {
+        userId,
+        operationId
+      });
+      return defaultSettings;
+
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'library_settings_error', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+        operationId
+      });
+      
+      // Return defaults with user's ID as fallback
+      return {
+        id: userId, // Use user's ID instead of random UUID
+        user_id: userId,
+        ...this.DEFAULT_SETTINGS,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    }
   }
 }
 

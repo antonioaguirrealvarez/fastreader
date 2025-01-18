@@ -26,14 +26,15 @@ export class SupabaseError extends Error {
 class SupabaseClient {
   private static instance: SupabaseClient;
   private client: ReturnType<typeof createClient<Database>>;
-  private readonly MAX_RETRIES = 3;
-  private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id'> = {
+  private readonly MAX_RETRIES = 1;
+  private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id' | 'id'> = {
     dark_mode: true,
     hide_header: false,
     display_mode: 'spritz',
     font_size: 'medium',
     record_analytics: true,
-    pause_on_punctuation: true
+    pause_on_punctuation: true,
+    words_per_minute: 300
   };
   private deleteOperations: Set<string> = new Set();
   private bulkOperationInProgress: boolean = false;
@@ -215,24 +216,32 @@ class SupabaseClient {
   // Settings Operations
   async upsertSettings(data: Partial<SettingsData> & { user_id: string }) {
     return this.handleRequest('settings_update', async () => {
-      // Ensure we're only using snake_case column names
+      // Ensure we're only using snake_case column names and required fields
       const validColumns = [
+        'id',
         'user_id',
         'dark_mode',
         'hide_header',
         'display_mode',
         'font_size',
         'record_analytics',
-        'pause_on_punctuation'
+        'pause_on_punctuation',
+        'words_per_minute',
+        'created_at',
+        'updated_at'
       ];
 
-      // Filter out any invalid columns
-      const sanitizedData = Object.entries(data).reduce((acc, [key, value]) => {
-        if (validColumns.includes(key)) {
-          acc[key] = value;
-        }
-        return acc;
-      }, {} as any);
+      // Filter out any invalid columns and ensure timestamps
+      const now = new Date().toISOString();
+      const sanitizedData = {
+        ...Object.entries(data).reduce((acc, [key, value]) => {
+          if (validColumns.includes(key)) {
+            acc[key] = value;
+          }
+          return acc;
+        }, {} as any),
+        updated_at: now
+      };
 
       // First check if settings exist
       const { data: existing } = await this.client
@@ -252,11 +261,14 @@ class SupabaseClient {
         if (error) throw error;
         return result;
       } else {
+        // For new settings, ensure we have all required fields
         const { data: result, error } = await this.client
           .from('user_settings')
           .insert({
             ...this.DEFAULT_SETTINGS,
-            ...sanitizedData
+            ...sanitizedData,
+            created_at: now,
+            id: data.user_id // Ensure we use the user's ID
           })
           .select()
           .single();
@@ -273,6 +285,7 @@ class SupabaseClient {
         .from('user_settings')
         .select('*')
         .eq('user_id', userId)
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
