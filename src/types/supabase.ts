@@ -61,7 +61,7 @@ export interface ReaderSettings {
 }
 
 export interface SettingsData {
-  id: number;
+  id: string;
   user_id: string;
   dark_mode: boolean;
   hide_header: boolean;

@@ -19,7 +19,8 @@ class SettingsService {
   private getDefaultSettings(userId: string): Omit<SettingsData, 'id'> {
     return {
       ...this.DEFAULT_SETTINGS,
-      user_id: userId
+      user_id: userId,
+      words_per_minute: 300
     };
   }
 
@@ -32,15 +33,28 @@ class SettingsService {
     });
 
     try {
-      // This will trigger our robust get/create flow
-      await this.getSettings(userId);
+      // Create settings with proper UUID fields
+      const defaultSettings = {
+        ...this.DEFAULT_SETTINGS,
+        id: userId,  // Use user's UUID as settings ID
+        user_id: userId,
+        words_per_minute: 300
+      };
+
+      await supabase.upsertSettings(defaultSettings);
+      
+      loggingCore.log(LogCategory.SETTINGS, 'settings_init_success', {
+        userId,
+        operationId
+      });
     } catch (error) {
+      // Log error but continue with flow
       loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
         error: error instanceof Error ? error.message : 'Unknown error',
         userId,
         operationId
       });
-      // Even if initialization fails, the getSettings call will still return defaults
+      // Don't rethrow - allow flow to continue
     }
   }
 
@@ -91,7 +105,7 @@ class SettingsService {
       // Return defaults immediately with a temporary id
       const tempSettings = {
         ...defaultSettings,
-        id: -1 // Temporary ID until actual settings are created
+        id: crypto.randomUUID()
       };
 
       loggingCore.log(LogCategory.SETTINGS, 'settings_using_defaults', {
@@ -111,7 +125,7 @@ class SettingsService {
       // Return defaults on any error with a temporary id
       return {
         ...this.getDefaultSettings(userId),
-        id: -1
+        id: crypto.randomUUID()
       };
     }
   }
@@ -145,8 +159,8 @@ class SettingsService {
       // Get current settings (this will create them if they don't exist)
       const currentSettings = await this.getSettings(userId);
       
-      // Only proceed with update if we have a valid ID
-      if (currentSettings.id === -1) {
+      // Only proceed with update if we have a valid ID (not a temporary one)
+      if (!currentSettings.id || currentSettings.id.length !== 36) {
         loggingCore.log(LogCategory.SETTINGS, 'settings_update_skipped', {
           userId,
           operationId,
