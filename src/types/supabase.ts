@@ -39,6 +39,7 @@ export interface Database {
           font_size: string;
           record_analytics: boolean;
           pause_on_punctuation: boolean;
+          words_per_minute: number;
           updated_at: string;
         };
         Insert: Omit<Row, 'id' | 'updated_at'>;
@@ -56,9 +57,11 @@ export interface ReaderSettings {
   fontSize: string;
   recordAnalytics: boolean;
   pauseOnPunctuation: boolean;
+  wordsPerMinute: number;
 }
 
 export interface SettingsData {
+  id: number;
   user_id: string;
   dark_mode: boolean;
   hide_header: boolean;
@@ -66,6 +69,7 @@ export interface SettingsData {
   font_size: string;
   record_analytics: boolean;
   pause_on_punctuation: boolean;
+  words_per_minute: number;
 }
 
 // Add a utility type for converting between camelCase and snake_case

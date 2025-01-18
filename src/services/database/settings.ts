@@ -4,167 +4,178 @@ import { loggingCore, LogCategory } from '../logging/core';
 
 class SettingsService {
   private cache: Map<string, SettingsData> = new Map();
-  private updateTimer: NodeJS.Timeout | null = null;
-  private pendingSettings: Map<string, Partial<SettingsData>> = new Map();
-  private readonly SETTINGS_UPDATE_DELAY = 10000;
-  private initializationPromises: Map<string, Promise<void>> = new Map();
+  private readonly SETTINGS_TIMEOUT = 3000; // 3 seconds timeout
 
-  private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id'> = {
+  private readonly DEFAULT_SETTINGS: Omit<SettingsData, 'user_id' | 'id'> = {
     dark_mode: true,
     hide_header: false,
     display_mode: 'spritz',
     font_size: 'medium',
     record_analytics: true,
-    pause_on_punctuation: true
+    pause_on_punctuation: true,
+    words_per_minute: 300
   };
 
-  private convertToSnakeCase(settings: ReaderSettings): Omit<SettingsData, 'user_id'> {
+  private getDefaultSettings(userId: string): Omit<SettingsData, 'id'> {
     return {
-      dark_mode: settings.darkMode,
-      hide_header: settings.hideHeader,
-      display_mode: settings.displayMode,
-      font_size: settings.fontSize,
-      record_analytics: settings.recordAnalytics,
-      pause_on_punctuation: settings.pauseOnPunctuation
+      ...this.DEFAULT_SETTINGS,
+      user_id: userId
     };
-  }
-
-  private convertToCamelCase(data: SettingsData): ReaderSettings {
-    return {
-      darkMode: data.dark_mode,
-      hideHeader: data.hide_header,
-      displayMode: data.display_mode,
-      fontSize: data.font_size,
-      recordAnalytics: data.record_analytics,
-      pauseOnPunctuation: data.pause_on_punctuation
-    };
-  }
-
-  async updateSettings(settings: Partial<SettingsData> & { user_id: string }): Promise<void> {
-    const userId = settings.user_id;
-    
-    // Get or initialize pending settings for this user
-    const currentPending = this.pendingSettings.get(userId) || {};
-    
-    // Merge new settings with existing pending settings
-    this.pendingSettings.set(userId, {
-      ...currentPending,
-      ...settings
-    });
-
-    // Reset or start the timer
-    if (this.updateTimer) {
-      clearTimeout(this.updateTimer);
-    }
-
-    this.updateTimer = setTimeout(async () => {
-      await this.flushPendingSettings();
-    }, this.SETTINGS_UPDATE_DELAY);
-  }
-
-  private async flushPendingSettings(): Promise<void> {
-    const pendingUpdates = new Map(this.pendingSettings);
-    this.pendingSettings.clear();
-
-    for (const [userId, settings] of pendingUpdates) {
-      try {
-        const fullSettings = {
-          ...this.DEFAULT_SETTINGS,
-          ...this.cache.get(userId),
-          ...settings,
-          user_id: userId
-        };
-
-        const result = await supabase.upsertSettings(fullSettings);
-        
-        if (result) {
-          this.cache.set(userId, result);
-          loggingCore.log(LogCategory.SETTINGS, 'settings_save_success', {
-            userId,
-            settings: result
-          });
-        }
-      } catch (error) {
-        loggingCore.log(LogCategory.ERROR, 'settings_save_failed', {
-          error: error instanceof Error ? {
-            message: error.message,
-            name: error.name,
-            code: (error as any).code,
-            details: (error as any).details,
-            hint: (error as any).hint
-          } : String(error),
-          userId
-        });
-      }
-    }
   }
 
   async initializeUserSettings(userId: string): Promise<void> {
-    // Return existing initialization promise if one exists
-    if (this.initializationPromises.has(userId)) {
-      return this.initializationPromises.get(userId)!;
+    const operationId = crypto.randomUUID();
+    
+    loggingCore.log(LogCategory.SETTINGS, 'settings_init_started', {
+      userId,
+      operationId
+    });
+
+    try {
+      // This will trigger our robust get/create flow
+      await this.getSettings(userId);
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+        operationId
+      });
+      // Even if initialization fails, the getSettings call will still return defaults
     }
-
-    const initPromise = (async () => {
-      try {
-        const existingSettings = await this.getSettings(userId);
-        
-        // Only create if no settings exist
-        if (!existingSettings) {
-          const defaultSettings = {
-            ...this.DEFAULT_SETTINGS,
-            user_id: userId
-          };
-
-          const result = await supabase.upsertSettings(defaultSettings);
-          
-          if (result) {
-            this.cache.set(userId, result);
-            loggingCore.log(LogCategory.SETTINGS, 'settings_initialized', {
-              userId,
-              settings: result
-            });
-          }
-        }
-      } catch (error) {
-        loggingCore.log(LogCategory.ERROR, 'settings_init_failed', {
-          error,
-          userId
-        });
-      } finally {
-        // Clean up the promise reference
-        this.initializationPromises.delete(userId);
-      }
-    })();
-
-    // Store the promise
-    this.initializationPromises.set(userId, initPromise);
-    return initPromise;
   }
 
-  async getSettings(userId: string): Promise<SettingsData | null> {
+  async getSettings(userId: string): Promise<SettingsData> {
+    const operationId = crypto.randomUUID();
+    
     try {
-      // Check cache first
+      // 1. Check cache first (fastest)
       if (this.cache.has(userId)) {
+        loggingCore.log(LogCategory.SETTINGS, 'settings_from_cache', {
+          userId,
+          operationId
+        });
         return this.cache.get(userId)!;
       }
 
-      const data = await supabase.getSettings(userId);
-      
-      if (data) {
-        this.cache.set(userId, data);
-        return data;
+      // 2. Try to get from database with timeout
+      try {
+        const settingsPromise = supabase.getSettings(userId);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Settings fetch timeout')), this.SETTINGS_TIMEOUT);
+        });
+
+        const data = await Promise.race([settingsPromise, timeoutPromise]) as SettingsData | null;
+        
+        if (data) {
+          this.cache.set(userId, data);
+          loggingCore.log(LogCategory.SETTINGS, 'settings_from_db', {
+            userId,
+            operationId
+          });
+          return data;
+        }
+      } catch (error) {
+        loggingCore.log(LogCategory.ERROR, 'settings_fetch_timeout', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          userId,
+          operationId
+        });
       }
 
-      // If no settings exist, initialize them
-      await this.initializeUserSettings(userId);
-      return this.cache.get(userId) || null;
-    } catch (error) {
-      loggingCore.log(LogCategory.ERROR, 'settings_fetch_failed', {
-        error,
-        userId
+      // 3. If no settings exist or timeout, create them asynchronously and return defaults
+      const defaultSettings = this.getDefaultSettings(userId);
+      
+      // Try to create settings in background
+      this.createSettingsAsync(userId, operationId);
+
+      // Return defaults immediately with a temporary id
+      const tempSettings = {
+        ...defaultSettings,
+        id: -1 // Temporary ID until actual settings are created
+      };
+
+      loggingCore.log(LogCategory.SETTINGS, 'settings_using_defaults', {
+        userId,
+        operationId,
+        reason: 'no_settings_found'
       });
-      return null;
+      return tempSettings;
+
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'settings_critical_error', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+        operationId
+      });
+      
+      // Return defaults on any error with a temporary id
+      return {
+        ...this.getDefaultSettings(userId),
+        id: -1
+      };
+    }
+  }
+
+  private async createSettingsAsync(userId: string, operationId: string): Promise<void> {
+    try {
+      const defaultSettings = this.getDefaultSettings(userId);
+      const result = await supabase.upsertSettings(defaultSettings);
+      
+      if (result) {
+        this.cache.set(userId, result);
+        loggingCore.log(LogCategory.SETTINGS, 'settings_created_async', {
+          userId,
+          operationId
+        });
+      }
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'settings_creation_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+        operationId
+      });
+    }
+  }
+
+  async updateSettings(settings: Partial<SettingsData> & { user_id: string }): Promise<void> {
+    const operationId = crypto.randomUUID();
+    const userId = settings.user_id;
+
+    try {
+      // Get current settings (this will create them if they don't exist)
+      const currentSettings = await this.getSettings(userId);
+      
+      // Only proceed with update if we have a valid ID
+      if (currentSettings.id === -1) {
+        loggingCore.log(LogCategory.SETTINGS, 'settings_update_skipped', {
+          userId,
+          operationId,
+          reason: 'no_valid_id'
+        });
+        return;
+      }
+
+      // Merge new settings
+      const updatedSettings = {
+        ...currentSettings,
+        ...settings
+      };
+
+      const result = await supabase.upsertSettings(updatedSettings);
+      
+      if (result) {
+        this.cache.set(userId, result);
+        loggingCore.log(LogCategory.SETTINGS, 'settings_updated', {
+          userId,
+          operationId
+        });
+      }
+    } catch (error) {
+      loggingCore.log(LogCategory.ERROR, 'settings_update_failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+        operationId
+      });
     }
   }
 
