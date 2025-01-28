@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase/client';
 import { documentProcessor } from './documentProcessing/documentProcessor';
-import { loggingCore, LogCategory } from '../logging/core';
+import { loggingCore, LogCategory } from './logging/core';
 import { ProcessingOptions } from './documentProcessing/types';
 
 export class StorageService {
